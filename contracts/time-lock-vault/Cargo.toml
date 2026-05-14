@@ -1,0 +1,20 @@
+[package]
+name = "time-lock-vault"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <you@example.com>"]
+description = "A decentralized time-lock vault on Stellar Soroban"
+license = "MIT"
+repository = "https://github.com/your-org/time-lock-vault"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]
