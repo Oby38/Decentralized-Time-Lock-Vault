@@ -205,6 +205,18 @@ Returns a paginated slice of active depositor addresses.
 
 Use `offset=0, limit=N` for the first page, then increment `offset` by `N` for subsequent pages.
 
+#### `get_vault_with_time_remaining(depositor) → Option<(VaultEntry, u64)>`
+Returns `Some((entry, seconds_remaining))` if a deposit exists, or `None`. Combines `get_vault` and `time_remaining` into a single RPC call.
+
+#### `is_admin(address) → bool`
+Returns `true` if `address` is the current admin. Returns `false` if admin has been renounced.
+
+#### `has_deposit(depositor) → bool`
+Returns `true` if `depositor` has an active deposit. Cheaper than `get_vault` — no `VaultEntry` deserialization.
+
+#### `get_version() → String`
+Returns the contract version string (e.g. `"0.1.0"`), set at compile time from `CARGO_PKG_VERSION`.
+
 ---
 
 ## Error Codes

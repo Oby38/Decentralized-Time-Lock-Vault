@@ -8,7 +8,6 @@ pub const MAX_DEPOSIT_AMOUNT: i128 = 1_000_000_000_000_000;
 pub const MAX_LOCK_DURATION_SECS: u64 = 157_788_000;
 
 /// Minimum lock duration: prevent trivial, pointless vaults that waste storage.
-/// Set to 60 seconds to avoid very short-lived deposits.
 pub const MIN_LOCK_DURATION_SECS: u64 = 60;
 
 // ----------------------------------------------------------------
@@ -18,12 +17,9 @@ pub const MIN_LOCK_DURATION_SECS: u64 = 60;
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum VaultKey {
-    /// Maps (depositor, deposit_id) → VaultEntry
-    Deposit(Address, u32),
-    /// Maps depositor → next deposit ID counter
-    DepositCounter(Address),
-    /// Contract-level admin address
+    /// Maps depositor → VaultEntry
     Deposit(Address),
+    /// Contract-level admin address
     Admin,
     PendingAdmin,
     /// Set to true once initialize() has been called; never removed
@@ -42,9 +38,6 @@ pub enum VaultKey {
 //  Data Structures
 // ----------------------------------------------------------------
 
-/// Represents a single vault deposit.
-/// The depositor address is not stored here — it is already the storage key
-/// (VaultKey::Deposit(Address)), so duplicating it wastes persistent storage.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VaultEntry {
@@ -52,8 +45,6 @@ pub struct VaultEntry {
     pub amount: i128,
     pub unlock_time: u64,
     pub depositor: Address,
-
     /// Early-exit penalty in basis points (0–10000). Charged on cancel_deposit.
-    /// 0 = free cancellation, 10000 = 100% penalty (all funds go to fee_recipient).
     pub penalty_bps: u32,
 }
