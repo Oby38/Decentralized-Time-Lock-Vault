@@ -9,6 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  STELLAR_CLI_VERSION: "26.0.0"
 
 jobs:
   # ----------------------------------------------------------------
@@ -97,21 +98,39 @@ jobs:
       - name: Build release WASM
         run: cargo build --target wasm32-unknown-unknown --release
 
-      - name: Install Soroban CLI
-        run: cargo install --locked soroban-cli
+      - name: Cache stellar-cli
+        id: cache-stellar
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/stellar
+          key: stellar-cli-${{ env.STELLAR_CLI_VERSION }}
+
+      - name: Install stellar-cli
+        if: steps.cache-stellar.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL "https://github.com/stellar/stellar-cli/releases/download/v${{ env.STELLAR_CLI_VERSION }}/stellar-cli-v${{ env.STELLAR_CLI_VERSION }}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C /usr/local/bin stellar
 
       - name: Optimize WASM
         run: |
-          soroban contract optimize \
+          stellar contract optimize \
             --wasm target/wasm32-unknown-unknown/release/time_lock_vault.wasm \
             --wasm-out target/time_lock_vault.optimized.wasm
 
-      - name: Report WASM size
+      - name: Check WASM size
+        env:
+          MAX_WASM_BYTES: 65536
         run: |
           echo "=== Raw WASM ==="
           ls -lh target/wasm32-unknown-unknown/release/time_lock_vault.wasm
           echo "=== Optimized WASM ==="
           ls -lh target/time_lock_vault.optimized.wasm
+          ACTUAL=$(wc -c < target/time_lock_vault.optimized.wasm)
+          echo "Optimized WASM size: ${ACTUAL} bytes (limit: ${MAX_WASM_BYTES})"
+          if [ "$ACTUAL" -gt "$MAX_WASM_BYTES" ]; then
+            echo "ERROR: WASM too large: ${ACTUAL} bytes exceeds limit of ${MAX_WASM_BYTES} bytes"
+            exit 1
+          fi
 
       - name: Upload optimized WASM artifact
         uses: actions/upload-artifact@v4

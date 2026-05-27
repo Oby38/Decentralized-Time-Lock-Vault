@@ -52,7 +52,7 @@ fn advance_time(env: &Env, seconds: u64) {
         base_reserve: 10,
         min_temp_entry_ttl: 16,
         min_persistent_entry_ttl: 4096,
-        max_entry_ttl: 6_307_200,
+        max_entry_ttl: 33_000_000,
     });
 }
 
@@ -412,6 +412,29 @@ fn test_cancel_transfer_admin_by_non_admin_fails() {
 }
 
 #[test]
+fn test_accept_admin_by_admin_with_no_pending_fails() {
+    let (env, vault, _token, admin, _alice) = setup();
+
+    // Admin tries to accept without any prior transfer_admin
+    let result = vault.try_accept_admin(&admin);
+    assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
+}
+
+#[test]
+fn test_accept_admin_after_cancel_fails() {
+    let (env, vault, _token, admin, _alice) = setup();
+    let new_admin: Address = Address::generate(&env);
+
+    vault.transfer_admin(&admin, &new_admin);
+    vault.cancel_transfer_admin(&admin);
+
+    // Pending is cleared; previously-nominated address must now fail
+    let result = vault.try_accept_admin(&new_admin);
+    assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
+    assert_eq!(vault.get_pending_admin(), None);
+}
+
+#[test]
 fn test_new_admin_can_emergency_withdraw_after_transfer() {
     let (env, vault, token, admin, alice, _fee_recipient) = setup();
     let new_admin: Address = Address::generate(&env);
@@ -501,6 +524,26 @@ fn test_redeposit_after_withdraw_succeeds() {
 
     let entry = vault.get_vault(&alice).expect("entry should exist");
     assert_eq!(entry.amount, 500);
+}
+
+// ================================================================
+//  TTL / storage constants
+// ================================================================
+
+#[test]
+fn test_bump_target_covers_max_lock_duration() {
+    // At 5 s/ledger, MAX_LOCK_DURATION_SECS converts to ledgers.
+    // BUMP_TARGET must be >= that value so a max-duration deposit
+    // cannot expire before its unlock time.
+    use crate::storage::BUMP_TARGET;
+    const LEDGER_INTERVAL_SECS: u64 = 5;
+    let max_lock_ledgers = MAX_LOCK_DURATION_SECS / LEDGER_INTERVAL_SECS;
+    assert!(
+        BUMP_TARGET as u64 >= max_lock_ledgers,
+        "BUMP_TARGET ({}) must be >= max lock duration in ledgers ({})",
+        BUMP_TARGET,
+        max_lock_ledgers,
+    );
 }
 
 // ================================================================

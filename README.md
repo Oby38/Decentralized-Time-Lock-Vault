@@ -214,6 +214,22 @@ make check
 make optimize
 ```
 
+### Check WASM size
+
+```bash
+make check-wasm-size
+```
+
+Fails if the optimized WASM exceeds `MAX_WASM_BYTES` (default **65 536 bytes / 64 KB**).
+Override the threshold at the command line:
+
+```bash
+make check-wasm-size MAX_WASM_BYTES=81920   # 80 KB
+```
+
+The same threshold is enforced in CI via the `Check WASM size` step in `.github/workflows/ci.yml`.
+To update the limit, change `MAX_WASM_BYTES` in both places (or only in `ci.yml` if you don't use the Makefile target locally).
+
 ### Deploy to Testnet
 
 ```bash

@@ -11,8 +11,10 @@ use crate::types::{VaultEntry, VaultKey};
 /// Minimum ledger TTL threshold before we bump (≈ 30 days at 5s/ledger).
 pub const BUMP_THRESHOLD: u32 = 518_400;
 
-/// Target TTL after a bump (≈ 1 year at 5s/ledger).
-pub const BUMP_TARGET: u32 = 6_307_200;
+/// Target TTL after a bump (≈ 5.2 years at 5s/ledger).
+/// Must exceed MAX_LOCK_DURATION_SECS in ledger units (157_788_000s / 5s = 31_557_600 ledgers)
+/// so a max-duration deposit cannot expire before its unlock time.
+pub const BUMP_TARGET: u32 = 33_000_000;
 
 // ----------------------------------------------------------------
 //  Deposit helpers
@@ -52,12 +54,6 @@ pub fn get_deposit_readonly(env: &Env, depositor: &Address) -> Option<VaultEntry
 pub fn remove_deposit(env: &Env, depositor: &Address) {
     let key = VaultKey::Deposit(depositor.clone());
     env.storage().persistent().remove(&key);
-}
-
-/// Returns `true` if a deposit record exists for `depositor`.
-pub fn has_deposit(env: &Env, depositor: &Address) -> bool {
-    let key = VaultKey::Deposit(depositor.clone());
-    env.storage().persistent().has(&key)
 }
 
 // ----------------------------------------------------------------
