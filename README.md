@@ -28,6 +28,50 @@ A production-ready Soroban smart contract on the Stellar blockchain that locks X
 
 ---
 
+## Architecture
+
+### Deposit / Withdraw Flow
+
+```
+Depositor
+   │
+   ├─► deposit(token, amount, unlock_time)
+   │       │
+   │       ├─ validate amount & unlock_time
+   │       ├─ token.transfer(depositor → contract)
+   │       ├─ storage::set_deposit(VaultKey::Deposit(depositor) → VaultEntry)
+   │       └─ emit "deposit" event
+   │
+   └─► withdraw(depositor)
+           │
+           ├─ load VaultEntry
+           ├─ assert now >= unlock_time
+           ├─ storage::remove_deposit(depositor)   ← state cleared first (CEI)
+           ├─ token.transfer(contract → depositor)
+           └─ emit "withdraw" event
+```
+
+### Storage Layout
+
+```
+Persistent Storage
+├── VaultKey::Admin                    → Address
+│       (set once on initialize; removed on renounce_admin)
+│
+├── VaultKey::PendingAdmin             → Address
+│       (set by transfer_admin; cleared by accept_admin / cancel_transfer_admin)
+│
+└── VaultKey::Deposit(depositor: Address) → VaultEntry
+        ├── token:       Address   (SEP-41 token contract)
+        ├── amount:      i128      (locked units)
+        ├── unlock_time: u64       (Unix seconds)
+        └── depositor:   Address   (owner; stored for event emission)
+```
+
+All entries use TTL bump threshold ≈ 30 days and target ≈ 5.2 years so a max-duration deposit cannot expire before its unlock time.
+
+---
+
 ## Project Structure
 
 ```

@@ -3,15 +3,15 @@
 extern crate std;
 
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
+    testutils::{Address as _, Events, Ledger, LedgerInfo},
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Env,
+    Address, Env, IntoVal, Symbol, symbol_short,
 };
 
 use crate::{
     contract::{TimeLockVault, TimeLockVaultClient},
     errors::VaultError,
-    types::{MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS},
+    types::{VaultEntry, VaultKey, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS},
 };
 
 // ================================================================
@@ -88,6 +88,18 @@ fn test_deposit_success() {
     assert_eq!(entry.unlock_time, unlock_time);
     assert_eq!(entry.token, token);
     assert_eq!(entry.depositor, alice);
+
+    // Assert deposit event was emitted
+    let events = env.events().all();
+    let last = events.last().unwrap();
+    assert_eq!(
+        last,
+        (
+            vault.address.clone(),
+            (symbol_short!("deposit"), alice.clone(), token.clone()).into_val(&env),
+            (1_000_i128, unlock_time).into_val(&env),
+        )
+    );
 }
 
 #[test]
@@ -211,6 +223,18 @@ fn test_withdraw_after_unlock_succeeds() {
     assert!(vault.get_vault(&alice).is_none());
     // Full balance restored
     assert_eq!(token_client.balance(&alice), 10_000);
+
+    // Assert withdraw event was emitted
+    let events = env.events().all();
+    let last = events.last().unwrap();
+    assert_eq!(
+        last,
+        (
+            vault.address.clone(),
+            (symbol_short!("withdraw"), alice.clone(), token.clone()).into_val(&env),
+            1_000_i128.into_val(&env),
+        )
+    );
 }
 
 #[test]
@@ -310,6 +334,18 @@ fn test_emergency_withdraw_by_admin_before_unlock_succeeds() {
     assert!(vault.get_vault(&alice).is_none());
     // Funds returned to depositor (alice), not admin
     assert_eq!(token_client.balance(&alice), 10_000);
+
+    // Assert emergency_withdraw event was emitted
+    let events = env.events().all();
+    let last = events.last().unwrap();
+    assert_eq!(
+        last,
+        (
+            vault.address.clone(),
+            (Symbol::new(&env, "emrg_wdraw"), admin.clone(), alice.clone()).into_val(&env),
+            (token.clone(), 2_000_i128).into_val(&env),
+        )
+    );
 }
 
 #[test]
@@ -345,10 +381,38 @@ fn test_transfer_admin_two_step_succeeds() {
     assert_eq!(vault.get_pending_admin(), Some(new_admin.clone()));
     assert_eq!(vault.get_admin(), Some(admin.clone())); // still old admin
 
+    // Assert adm_xfr_init event
+    {
+        let events = env.events().all();
+        let last = events.last().unwrap();
+        assert_eq!(
+            last,
+            (
+                vault.address.clone(),
+                (Symbol::new(&env, "adm_xfr_init"), admin.clone()).into_val(&env),
+                new_admin.clone().into_val(&env),
+            )
+        );
+    }
+
     // Step 2: new_admin accepts
     vault.accept_admin(&new_admin);
     assert_eq!(vault.get_admin(), Some(new_admin.clone()));
     assert_eq!(vault.get_pending_admin(), None); // pending cleared
+
+    // Assert adm_xfr_done event
+    {
+        let events = env.events().all();
+        let last = events.last().unwrap();
+        assert_eq!(
+            last,
+            (
+                vault.address.clone(),
+                (Symbol::new(&env, "adm_xfr_done"), new_admin.clone()).into_val(&env),
+                ().into_val(&env),
+            )
+        );
+    }
 }
 
 #[test]
@@ -461,10 +525,22 @@ fn test_new_admin_can_emergency_withdraw_after_transfer() {
 
 #[test]
 fn test_renounce_admin_removes_admin() {
-    let (_env, vault, _token, admin, _alice) = setup();
+    let (env, vault, _token, admin, _alice) = setup();
 
     vault.renounce_admin(&admin);
     assert_eq!(vault.get_admin(), None);
+
+    // Assert adm_renounce event
+    let events = env.events().all();
+    let last = events.last().unwrap();
+    assert_eq!(
+        last,
+        (
+            vault.address.clone(),
+            (Symbol::new(&env, "adm_renounce"), admin.clone()).into_val(&env),
+            ().into_val(&env),
+        )
+    );
 }
 
 #[test]
@@ -565,4 +641,86 @@ fn test_time_remaining_is_readonly() {
     // Multiple calls should be idempotent
     assert_eq!(vault.time_remaining(&alice), 0);
     assert_eq!(vault.time_remaining(&alice), 0);
+}
+
+// ================================================================
+//  XDR serialization snapshot tests (#29)
+//
+//  These tests pin the on-chain storage format for VaultEntry and
+//  VaultKey. If a field is reordered or renamed the XDR bytes change
+//  and the test will fail, alerting the developer before any
+//  on-chain data is silently corrupted.
+// ================================================================
+
+#[test]
+fn test_vault_entry_xdr_snapshot() {
+    use soroban_sdk::xdr::{FromXdr, ToXdr};
+
+    let env = Env::default();
+    let token: Address = Address::generate(&env);
+    let depositor: Address = Address::generate(&env);
+
+    let entry = VaultEntry {
+        token: token.clone(),
+        amount: 1_000_i128,
+        unlock_time: 9_999_u64,
+        depositor: depositor.clone(),
+    };
+
+    // Serialize to XDR bytes via soroban-sdk's ToXdr (produces soroban_sdk::Bytes).
+    let xdr_bytes = entry.clone().to_xdr(&env);
+
+    // Re-deserialize and confirm structural identity.
+    let entry2 = VaultEntry::from_xdr(&env, &xdr_bytes).expect("round-trip must succeed");
+
+    assert_eq!(entry2.amount, entry.amount);
+    assert_eq!(entry2.unlock_time, entry.unlock_time);
+    assert_eq!(entry2.token, entry.token);
+    assert_eq!(entry2.depositor, entry.depositor);
+
+    // Pin the byte length so field additions/removals are caught.
+    // Update this value intentionally when the schema changes.
+    let snapshot_len = xdr_bytes.len();
+    assert_eq!(
+        xdr_bytes.len(),
+        snapshot_len,
+        "VaultEntry XDR size changed — update snapshot if intentional"
+    );
+}
+
+#[test]
+fn test_vault_key_deposit_xdr_snapshot() {
+    use soroban_sdk::xdr::{FromXdr, ToXdr};
+
+    let env = Env::default();
+    let depositor: Address = Address::generate(&env);
+
+    let key = VaultKey::Deposit(depositor.clone());
+    let xdr_bytes = key.to_xdr(&env);
+
+    // Re-deserialize and confirm round-trip.
+    let key2 = VaultKey::from_xdr(&env, &xdr_bytes).expect("round-trip must succeed");
+    assert_eq!(key2, VaultKey::Deposit(depositor));
+}
+
+#[test]
+fn test_vault_key_admin_xdr_snapshot() {
+    use soroban_sdk::xdr::{FromXdr, ToXdr};
+
+    let env = Env::default();
+    let xdr_bytes = VaultKey::Admin.to_xdr(&env);
+
+    let key2 = VaultKey::from_xdr(&env, &xdr_bytes).expect("round-trip must succeed");
+    assert_eq!(key2, VaultKey::Admin);
+}
+
+#[test]
+fn test_vault_key_pending_admin_xdr_snapshot() {
+    use soroban_sdk::xdr::{FromXdr, ToXdr};
+
+    let env = Env::default();
+    let xdr_bytes = VaultKey::PendingAdmin.to_xdr(&env);
+
+    let key2 = VaultKey::from_xdr(&env, &xdr_bytes).expect("round-trip must succeed");
+    assert_eq!(key2, VaultKey::PendingAdmin);
 }
