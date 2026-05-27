@@ -411,6 +411,29 @@ fn test_cancel_transfer_admin_by_non_admin_fails() {
 }
 
 #[test]
+fn test_accept_admin_by_admin_with_no_pending_fails() {
+    let (env, vault, _token, admin, _alice) = setup();
+
+    // Admin tries to accept without any prior transfer_admin
+    let result = vault.try_accept_admin(&admin);
+    assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
+}
+
+#[test]
+fn test_accept_admin_after_cancel_fails() {
+    let (env, vault, _token, admin, _alice) = setup();
+    let new_admin: Address = Address::generate(&env);
+
+    vault.transfer_admin(&admin, &new_admin);
+    vault.cancel_transfer_admin(&admin);
+
+    // Pending is cleared; previously-nominated address must now fail
+    let result = vault.try_accept_admin(&new_admin);
+    assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
+    assert_eq!(vault.get_pending_admin(), None);
+}
+
+#[test]
 fn test_new_admin_can_emergency_withdraw_after_transfer() {
     let (env, vault, token, admin, alice) = setup();
     let new_admin: Address = Address::generate(&env);
