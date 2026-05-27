@@ -79,6 +79,8 @@ All entries use TTL bump threshold ≈ 30 days and target ≈ 5.2 years so a max
 ├── Cargo.toml                          # Workspace manifest
 ├── Makefile                            # Build / test / lint / deploy helpers
 ├── rust-toolchain.toml                 # Pins stable Rust + wasm32 target
+├── .cargo/
+│   └── config.toml                     # Documents --target trade-off (default target intentionally unset)
 ├── .gitignore
 ├── README.md
 ├── .github/
@@ -242,12 +244,18 @@ cargo install --locked soroban-cli
 make build
 ```
 
+> **Why not just `cargo build`?**
+> Running `cargo build` without `--target wasm32-unknown-unknown` produces a native binary, not a WASM contract. The Makefile's `build` target always passes the correct flag. A `.cargo/config.toml` is included in the repo that documents this trade-off — the default target is intentionally left commented out because setting it would break `cargo test` (tests must run natively to use Soroban testutils).
+
 ### Test
 
 ```bash
 make test
 ```
 
+> Tests run natively (no `--target` flag) so that `soroban-sdk`'s `testutils` feature works. Never run `cargo test --target wasm32-unknown-unknown`.
+
+### Full CI check (fmt + lint + test)
 ### Full CI check (fmt + lint + test + audit + deny)
 
 ```bash
