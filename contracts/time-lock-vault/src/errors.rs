@@ -30,4 +30,7 @@ pub enum VaultError {
 
     /// The deposit amount exceeds the maximum allowed per vault.
     AmountTooLarge = 8,
+
+    /// penalty_bps exceeds 10000 (100%).
+    InvalidPenaltyBps = 9,
 }

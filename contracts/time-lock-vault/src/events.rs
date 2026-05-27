@@ -54,3 +54,15 @@ pub fn admin_renounced(env: &Env, former_admin: &Address) {
     let topics = (Symbol::new(env, "adm_renounce"), former_admin.clone());
     env.events().publish(topics, ());
 }
+
+/// Emitted when a depositor cancels early and pays a penalty.
+pub fn deposit_cancelled(
+    env: &Env,
+    depositor: &Address,
+    token: &Address,
+    amount: i128,
+    penalty: i128,
+) {
+    let topics = (Symbol::new(env, "dep_cancel"), depositor.clone(), token.clone());
+    env.events().publish(topics, (amount, penalty));
+}
