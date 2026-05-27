@@ -43,6 +43,9 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --all-targets --features testutils -- -D warnings
 
+      - name: Build docs
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
+
   # ----------------------------------------------------------------
   #  Test
   # ----------------------------------------------------------------
@@ -117,12 +120,20 @@ jobs:
             --wasm target/wasm32-unknown-unknown/release/time_lock_vault.wasm \
             --wasm-out target/time_lock_vault.optimized.wasm
 
-      - name: Report WASM size
+      - name: Check WASM size
+        env:
+          MAX_WASM_BYTES: 65536
         run: |
           echo "=== Raw WASM ==="
           ls -lh target/wasm32-unknown-unknown/release/time_lock_vault.wasm
           echo "=== Optimized WASM ==="
           ls -lh target/time_lock_vault.optimized.wasm
+          ACTUAL=$(wc -c < target/time_lock_vault.optimized.wasm)
+          echo "Optimized WASM size: ${ACTUAL} bytes (limit: ${MAX_WASM_BYTES})"
+          if [ "$ACTUAL" -gt "$MAX_WASM_BYTES" ]; then
+            echo "ERROR: WASM too large: ${ACTUAL} bytes exceeds limit of ${MAX_WASM_BYTES} bytes"
+            exit 1
+          fi
 
       - name: Upload optimized WASM artifact
         uses: actions/upload-artifact@v4

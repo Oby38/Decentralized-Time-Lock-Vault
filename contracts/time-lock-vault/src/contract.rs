@@ -1,10 +1,10 @@
-use soroban_sdk::{contract, contractimpl, token, Address, Env};
+use soroban_sdk::{contract, contractimpl, token, Address, Env, Vec};
 
 use crate::{
     errors::VaultError,
     events,
     storage,
-    types::{VaultEntry, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS},
+    types::{VaultEntry, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS, MIN_LOCK_DURATION_SECS},
 };
 
 // ============================================================
@@ -28,16 +28,35 @@ impl TimeLockVault {
     ///
     /// # Errors
     /// * `Unauthorized` — Contract has already been initialized.
-    pub fn initialize(env: Env, admin: Address) -> Result<(), VaultError> {
-        // FIX: require_auth FIRST before any state reads (correct Soroban pattern).
+    pub fn initialize(env: Env, admin: Address, fee_recipient: Address) -> Result<(), VaultError> {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        max_deposit: Option<i128>,
+        max_lock_secs: Option<u64>,
+    ) -> Result<(), VaultError> {
         admin.require_auth();
 
-        // Prevent re-initialization.
         if storage::get_admin(&env).is_some() {
             return Err(VaultError::Unauthorized);
         }
 
         storage::set_admin(&env, &admin);
+        storage::set_fee_recipient(&env, &fee_recipient);
+
+        if let Some(v) = max_deposit {
+            if v <= 0 {
+                return Err(VaultError::InvalidAmount);
+            }
+            storage::set_max_deposit(&env, v);
+        }
+        if let Some(v) = max_lock_secs {
+            if v == 0 {
+                return Err(VaultError::LockDurationTooLong);
+            }
+            storage::set_max_lock_secs(&env, v);
+        }
+
         Ok(())
     }
 
@@ -70,49 +89,100 @@ impl TimeLockVault {
         token: Address,
         amount: i128,
         unlock_time: u64,
+        penalty_bps: u32,
     ) -> Result<(), VaultError> {
-        // --- Auth (always first) ---
         depositor.require_auth();
 
-        // --- Amount validation ---
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
-        if amount > MAX_DEPOSIT_AMOUNT {
+        let max_deposit = storage::get_max_deposit(&env).unwrap_or(MAX_DEPOSIT_AMOUNT);
+        if amount > max_deposit {
             return Err(VaultError::AmountTooLarge);
         }
+        if penalty_bps > 10_000 {
+            return Err(VaultError::InvalidPenaltyBps);
+        }
 
-        // --- Time validation ---
         let now = env.ledger().timestamp();
         if unlock_time <= now {
             return Err(VaultError::UnlockTimeNotInFuture);
         }
-        // FIX: enforce maximum lock duration to prevent unbounded TTL requirements.
+        let max_lock = storage::get_max_lock_secs(&env).unwrap_or(MAX_LOCK_DURATION_SECS);
         let lock_duration = unlock_time.saturating_sub(now);
-        if lock_duration > MAX_LOCK_DURATION_SECS {
+        if lock_duration > max_lock {
             return Err(VaultError::LockDurationTooLong);
         }
+        // Enforce a minimum lock duration to avoid trivial deposits that
+        // immediately expire and waste persistent storage.
+        if lock_duration < MIN_LOCK_DURATION_SECS {
+            return Err(VaultError::LockDurationTooShort);
+        }
 
-        // --- Duplicate deposit guard ---
         if storage::has_deposit(&env, &depositor) {
+        // --- Duplicate deposit guard ---
+        if storage::get_deposit_readonly(&env, &depositor).is_some() {
             return Err(VaultError::DepositAlreadyExists);
         }
 
-        // --- Transfer tokens from depositor → this contract ---
         let token_client = token::Client::new(&env, &token);
         token_client.transfer(&depositor, &env.current_contract_address(), &amount);
 
-        // --- Persist the vault entry ---
         let entry = VaultEntry {
             token: token.clone(),
             amount,
             unlock_time,
             depositor: depositor.clone(),
+            penalty_bps,
         };
         storage::set_deposit(&env, &depositor, &entry);
 
+        // --- Maintain global depositor list ---
+        storage::add_depositor(&env, &depositor);
+
         // --- Emit event ---
         events::deposit(&env, &depositor, &token, amount, unlock_time);
+
+        Ok(())
+    }
+
+    // ----------------------------------------------------------------
+    //  Core: Cancel Deposit (early exit with penalty)
+    // ----------------------------------------------------------------
+
+    /// Cancel an active deposit before the unlock time, paying a penalty.
+    /// Penalty goes to `fee_recipient`; remainder returned to depositor.
+    /// Fails with `FundsStillLocked` if already past unlock time — use `withdraw`.
+    pub fn cancel_deposit(env: Env, depositor: Address) -> Result<(), VaultError> {
+        depositor.require_auth();
+
+        let entry = storage::get_deposit(&env, &depositor)
+            .ok_or(VaultError::NoDepositFound)?;
+
+        let now = env.ledger().timestamp();
+        if now >= entry.unlock_time {
+            return Err(VaultError::FundsStillLocked);
+        }
+
+        // Checks-Effects-Interactions
+        storage::remove_deposit(&env, &depositor);
+
+        let token_client = token::Client::new(&env, &entry.token);
+        let contract = env.current_contract_address();
+
+        let penalty: i128 = (entry.amount * entry.penalty_bps as i128) / 10_000;
+        let refund = entry.amount - penalty;
+
+        if penalty > 0 {
+            let fee_recipient = storage::get_fee_recipient(&env)
+                .unwrap_or_else(|| depositor.clone());
+            token_client.transfer(&contract, &fee_recipient, &penalty);
+        }
+        if refund > 0 {
+            token_client.transfer(&contract, &depositor, &refund);
+        }
+
+        events::deposit_cancelled(&env, &depositor, &entry.token, entry.amount, penalty);
 
         Ok(())
     }
@@ -133,8 +203,8 @@ impl TimeLockVault {
         // --- Auth ---
         depositor.require_auth();
 
-        // --- Load deposit (bumps TTL — this is a state-changing call) ---
-        let entry = storage::get_deposit(&env, &depositor)
+        // --- Load deposit without bumping TTL; the entry will be deleted ---
+        let entry = storage::get_deposit_readonly(&env, &depositor)
             .ok_or(VaultError::NoDepositFound)?;
 
         // --- Time check ---
@@ -145,6 +215,7 @@ impl TimeLockVault {
 
         // --- Checks-Effects-Interactions: clear storage BEFORE external call ---
         storage::remove_deposit(&env, &depositor);
+        storage::remove_depositor(&env, &depositor);
 
         // --- Transfer tokens from contract → depositor ---
         let token_client = token::Client::new(&env, &entry.token);
@@ -188,12 +259,13 @@ impl TimeLockVault {
             return Err(VaultError::Unauthorized);
         }
 
-        // --- Load deposit ---
-        let entry = storage::get_deposit(&env, &depositor)
+        // --- Load deposit without bumping TTL; the entry will be deleted ---
+        let entry = storage::get_deposit_readonly(&env, &depositor)
             .ok_or(VaultError::NoDepositFound)?;
 
         // --- Checks-Effects-Interactions ---
         storage::remove_deposit(&env, &depositor);
+        storage::remove_depositor(&env, &depositor);
 
         // --- Return funds to depositor (NOT to admin) ---
         let token_client = token::Client::new(&env, &entry.token);
@@ -233,6 +305,12 @@ impl TimeLockVault {
         let stored_admin = storage::get_admin(&env).ok_or(VaultError::Unauthorized)?;
         if admin != stored_admin {
             return Err(VaultError::Unauthorized);
+        }
+
+        // Prevent nominating the current admin as the pending admin — this
+        // would be a no-op that wastes storage and emits a misleading event.
+        if new_admin == stored_admin {
+            return Err(VaultError::InvalidAdmin);
         }
 
         storage::set_pending_admin(&env, &new_admin);
@@ -349,8 +427,34 @@ impl TimeLockVault {
         storage::get_pending_admin(&env)
     }
 
-    /// Returns the protocol constants for client-side validation.
-    pub fn get_constants(_env: Env) -> (i128, u64) {
-        (MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS)
+    /// Returns the effective limits for this deployment.
+    /// Returns runtime-configured values if set, otherwise compile-time defaults.
+    pub fn get_constants(env: Env) -> (i128, u64) {
+        let max_deposit = storage::get_max_deposit(&env).unwrap_or(MAX_DEPOSIT_AMOUNT);
+        let max_lock = storage::get_max_lock_secs(&env).unwrap_or(MAX_LOCK_DURATION_SECS);
+        (max_deposit, max_lock)
+    }
+
+    /// Returns the fee recipient address set at initialization.
+    pub fn get_fee_recipient(env: Env) -> Option<Address> {
+        storage::get_fee_recipient(&env)
+    }
+
+    // ----------------------------------------------------------------
+    //  Admin Tooling: Depositor Enumeration
+    // ----------------------------------------------------------------
+
+    /// Returns the total number of active depositors.
+    pub fn get_depositor_count(env: Env) -> u32 {
+        storage::get_depositor_count(&env)
+    }
+
+    /// Returns a paginated slice of active depositor addresses.
+    ///
+    /// # Arguments
+    /// * `offset` — Zero-based start index.
+    /// * `limit`  — Maximum number of addresses to return.
+    pub fn get_depositors(env: Env, offset: u32, limit: u32) -> Vec<Address> {
+        storage::get_depositors_page(&env, offset, limit)
     }
 }

@@ -1,3 +1,7 @@
+# "stable" is used here rather than a pinned version (e.g. "1.87.0") so that
+# routine `rustup update` calls keep the toolchain current without manual edits.
+# Trade-off: CI results may differ if a new stable is released between runs.
+# To pin, replace "stable" with the desired version string and commit the change.
 [toolchain]
 channel = "stable"
 targets = ["wasm32-unknown-unknown"]

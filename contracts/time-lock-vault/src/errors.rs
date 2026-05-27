@@ -30,4 +30,13 @@ pub enum VaultError {
 
     /// The deposit amount exceeds the maximum allowed per vault.
     AmountTooLarge = 8,
+
+    /// penalty_bps exceeds 10000 (100%).
+    InvalidPenaltyBps = 9,
+    
+    /// The requested lock duration is shorter than the minimum allowed.
+    LockDurationTooShort = 9,
+
+    /// The nominated admin address is invalid (e.g., same as current admin).
+    InvalidAdmin = 10,
 }
