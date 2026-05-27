@@ -20,24 +20,33 @@ impl TimeLockVault {
     //  Initialization
     // ----------------------------------------------------------------
 
-    /// Initialize the contract with an admin address.
-    /// Must be called once immediately after deployment.
-    ///
-    /// # Arguments
-    /// * `admin` — Address that gains emergency-withdrawal and admin privileges.
-    ///
-    /// # Errors
-    /// * `Unauthorized` — Contract has already been initialized.
-    pub fn initialize(env: Env, admin: Address) -> Result<(), VaultError> {
-        // FIX: require_auth FIRST before any state reads (correct Soroban pattern).
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        max_deposit: Option<i128>,
+        max_lock_secs: Option<u64>,
+    ) -> Result<(), VaultError> {
         admin.require_auth();
 
-        // Prevent re-initialization.
         if storage::get_admin(&env).is_some() {
             return Err(VaultError::Unauthorized);
         }
 
         storage::set_admin(&env, &admin);
+
+        if let Some(v) = max_deposit {
+            if v <= 0 {
+                return Err(VaultError::InvalidAmount);
+            }
+            storage::set_max_deposit(&env, v);
+        }
+        if let Some(v) = max_lock_secs {
+            if v == 0 {
+                return Err(VaultError::LockDurationTooLong);
+            }
+            storage::set_max_lock_secs(&env, v);
+        }
+
         Ok(())
     }
 
@@ -78,7 +87,8 @@ impl TimeLockVault {
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
-        if amount > MAX_DEPOSIT_AMOUNT {
+        let max_deposit = storage::get_max_deposit(&env).unwrap_or(MAX_DEPOSIT_AMOUNT);
+        if amount > max_deposit {
             return Err(VaultError::AmountTooLarge);
         }
 
@@ -87,9 +97,9 @@ impl TimeLockVault {
         if unlock_time <= now {
             return Err(VaultError::UnlockTimeNotInFuture);
         }
-        // FIX: enforce maximum lock duration to prevent unbounded TTL requirements.
+        let max_lock = storage::get_max_lock_secs(&env).unwrap_or(MAX_LOCK_DURATION_SECS);
         let lock_duration = unlock_time.saturating_sub(now);
-        if lock_duration > MAX_LOCK_DURATION_SECS {
+        if lock_duration > max_lock {
             return Err(VaultError::LockDurationTooLong);
         }
 
@@ -349,8 +359,11 @@ impl TimeLockVault {
         storage::get_pending_admin(&env)
     }
 
-    /// Returns the protocol constants for client-side validation.
-    pub fn get_constants(_env: Env) -> (i128, u64) {
-        (MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS)
+    /// Returns the effective limits for this deployment.
+    /// Returns runtime-configured values if set, otherwise compile-time defaults.
+    pub fn get_constants(env: Env) -> (i128, u64) {
+        let max_deposit = storage::get_max_deposit(&env).unwrap_or(MAX_DEPOSIT_AMOUNT);
+        let max_lock = storage::get_max_lock_secs(&env).unwrap_or(MAX_LOCK_DURATION_SECS);
+        (max_deposit, max_lock)
     }
 }

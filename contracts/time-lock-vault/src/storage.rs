@@ -94,7 +94,27 @@ pub fn get_pending_admin(env: &Env) -> Option<Address> {
 
 /// Remove the pending admin entry (after acceptance or cancellation).
 pub fn remove_pending_admin(env: &Env) {
-    env.storage()
-        .persistent()
-        .remove(&VaultKey::PendingAdmin);
+    env.storage().persistent().remove(&VaultKey::PendingAdmin);
+}
+
+// ----------------------------------------------------------------
+//  Runtime limits helpers
+// ----------------------------------------------------------------
+
+pub fn set_max_deposit(env: &Env, v: i128) {
+    env.storage().persistent().set(&VaultKey::MaxDeposit, &v);
+    env.storage().persistent().extend_ttl(&VaultKey::MaxDeposit, BUMP_THRESHOLD, BUMP_TARGET);
+}
+
+pub fn get_max_deposit(env: &Env) -> Option<i128> {
+    env.storage().persistent().get(&VaultKey::MaxDeposit)
+}
+
+pub fn set_max_lock_secs(env: &Env, v: u64) {
+    env.storage().persistent().set(&VaultKey::MaxLockSecs, &v);
+    env.storage().persistent().extend_ttl(&VaultKey::MaxLockSecs, BUMP_THRESHOLD, BUMP_TARGET);
+}
+
+pub fn get_max_lock_secs(env: &Env) -> Option<u64> {
+    env.storage().persistent().get(&VaultKey::MaxLockSecs)
 }

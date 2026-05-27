@@ -60,8 +60,8 @@ A production-ready Soroban smart contract on the Stellar blockchain that locks X
 
 ### Initialization
 
-#### `initialize(admin: Address)`
-Sets the admin address. Must be called once after deployment.
+#### `initialize(admin: Address, max_deposit: Option<i128>, max_lock_secs: Option<u64>)`
+Sets the admin address. Optionally overrides the compile-time limits for this deployment. Pass `None` to use the defaults (`10^15` and `5 years`). Must be called once after deployment.
 
 ---
 
@@ -119,7 +119,7 @@ Returns the current admin, or `None` if renounced.
 Returns the pending admin during a transfer, or `None`.
 
 #### `get_constants() → (i128, u64)`
-Returns `(MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS)` for client-side validation.
+Returns the effective `(MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS)` for this deployment — runtime-configured values if set at `initialize`, otherwise the compile-time defaults.
 
 ---
 

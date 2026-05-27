@@ -36,7 +36,7 @@ fn setup() -> (Env, TimeLockVaultClient<'static>, Address, Address, Address) {
     let asset_client = StellarAssetClient::new(&env, &token_address);
     asset_client.mint(&alice, &10_000);
 
-    vault.initialize(&admin);
+    vault.initialize(&admin, &None, &None);
 
     (env, vault, token_address, admin, alice)
 }
@@ -68,7 +68,7 @@ fn test_initialize_sets_admin() {
 #[test]
 fn test_double_initialize_fails() {
     let (_env, vault, _token, admin, _alice) = setup();
-    let result = vault.try_initialize(&admin);
+    let result = vault.try_initialize(&admin, &None, &None);
     assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
 }
 
@@ -288,6 +288,7 @@ fn test_get_time_returns_ledger_timestamp() {
 #[test]
 fn test_get_constants_returns_correct_values() {
     let (_env, vault, _token, _admin, _alice) = setup();
+    // With no custom limits, should fall back to compile-time defaults.
     let (max_amount, max_duration) = vault.get_constants();
     assert_eq!(max_amount, MAX_DEPOSIT_AMOUNT);
     assert_eq!(max_duration, MAX_LOCK_DURATION_SECS);
@@ -508,18 +509,114 @@ fn test_redeposit_after_withdraw_succeeds() {
 
 #[test]
 fn test_get_vault_is_readonly() {
-    // Calling get_vault on a non-existent entry should return None cleanly
-    // without panicking or creating storage entries.
-    let (env, vault, _token, _admin, alice) = setup();
+    let (_env, vault, _token, _admin, alice) = setup();
     assert!(vault.get_vault(&alice).is_none());
-    // Calling again should still return None (no side effects)
     assert!(vault.get_vault(&alice).is_none());
 }
 
 #[test]
 fn test_time_remaining_is_readonly() {
-    let (env, vault, _token, _admin, alice) = setup();
-    // Multiple calls should be idempotent
+    let (_env, vault, _token, _admin, alice) = setup();
     assert_eq!(vault.time_remaining(&alice), 0);
     assert_eq!(vault.time_remaining(&alice), 0);
+}
+
+// ================================================================
+//  Configurable limits
+// ================================================================
+
+/// Helper: deploy vault with custom limits.
+fn setup_with_limits(
+    max_deposit: Option<i128>,
+    max_lock_secs: Option<u64>,
+) -> (Env, TimeLockVaultClient<'static>, Address, Address, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let vault_id = env.register(TimeLockVault, ());
+    let vault = TimeLockVaultClient::new(&env, &vault_id);
+
+    let admin: Address = Address::generate(&env);
+    let alice: Address = Address::generate(&env);
+
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_address = token_id.address();
+
+    StellarAssetClient::new(&env, &token_address).mint(&alice, &1_000_000);
+
+    vault.initialize(&admin, &max_deposit, &max_lock_secs);
+
+    (env, vault, token_address, admin, alice)
+}
+
+#[test]
+fn test_get_constants_returns_custom_limits() {
+    let (_env, vault, _token, _admin, _alice) =
+        setup_with_limits(Some(5_000), Some(7200));
+    let (max_amount, max_duration) = vault.get_constants();
+    assert_eq!(max_amount, 5_000);
+    assert_eq!(max_duration, 7200);
+}
+
+#[test]
+fn test_custom_max_deposit_enforced() {
+    let (env, vault, token, _admin, alice) = setup_with_limits(Some(500), None);
+    let unlock_time = env.ledger().timestamp() + 3600;
+    // Exactly at custom limit — ok
+    vault.deposit(&alice, &token, &500, &unlock_time);
+    advance_time(&env, 3601);
+    vault.withdraw(&alice);
+    // One over custom limit — rejected
+    let result = vault.try_deposit(&alice, &token, &501, &unlock_time);
+    assert_eq!(result, Err(Ok(VaultError::AmountTooLarge)));
+}
+
+#[test]
+fn test_custom_max_lock_secs_enforced() {
+    let (env, vault, token, _admin, alice) = setup_with_limits(None, Some(3600));
+    // Exactly at custom limit — ok
+    let unlock_time = env.ledger().timestamp() + 3600;
+    vault.deposit(&alice, &token, &100, &unlock_time);
+    advance_time(&env, 3601);
+    vault.withdraw(&alice);
+    // One second over custom limit — rejected
+    let result = vault.try_deposit(&alice, &token, &100, &(env.ledger().timestamp() + 3601));
+    assert_eq!(result, Err(Ok(VaultError::LockDurationTooLong)));
+}
+
+#[test]
+fn test_default_fallback_when_no_custom_limits() {
+    let (env, vault, token, _admin, alice) = setup_with_limits(None, None);
+    // Compile-time default max deposit still enforced
+    let unlock_time = env.ledger().timestamp() + 3600;
+    let result = vault.try_deposit(&alice, &token, &(MAX_DEPOSIT_AMOUNT + 1), &unlock_time);
+    assert_eq!(result, Err(Ok(VaultError::AmountTooLarge)));
+    // Compile-time default max duration still enforced
+    let result = vault.try_deposit(
+        &alice, &token, &100,
+        &(env.ledger().timestamp() + MAX_LOCK_DURATION_SECS + 1),
+    );
+    assert_eq!(result, Err(Ok(VaultError::LockDurationTooLong)));
+}
+
+#[test]
+fn test_initialize_invalid_max_deposit_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let vault_id = env.register(TimeLockVault, ());
+    let vault = TimeLockVaultClient::new(&env, &vault_id);
+    let admin: Address = Address::generate(&env);
+    let result = vault.try_initialize(&admin, &Some(0_i128), &None);
+    assert_eq!(result, Err(Ok(VaultError::InvalidAmount)));
+}
+
+#[test]
+fn test_initialize_invalid_max_lock_secs_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let vault_id = env.register(TimeLockVault, ());
+    let vault = TimeLockVaultClient::new(&env, &vault_id);
+    let admin: Address = Address::generate(&env);
+    let result = vault.try_initialize(&admin, &None, &Some(0_u64));
+    assert_eq!(result, Err(Ok(VaultError::LockDurationTooLong)));
 }
