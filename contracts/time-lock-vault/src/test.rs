@@ -532,7 +532,7 @@ fn test_redeposit_after_withdraw_succeeds() {
 fn test_get_vault_is_readonly() {
     // Calling get_vault on a non-existent entry should return None cleanly
     // without panicking or creating storage entries.
-    let (env, vault, _token, _admin, alice) = setup();
+    let (_env, vault, _token, _admin, alice) = setup();
     assert!(vault.get_vault(&alice).is_none());
     // Calling again should still return None (no side effects)
     assert!(vault.get_vault(&alice).is_none());
@@ -540,7 +540,7 @@ fn test_get_vault_is_readonly() {
 
 #[test]
 fn test_time_remaining_is_readonly() {
-    let (env, vault, _token, _admin, alice) = setup();
+    let (_env, vault, _token, _admin, alice) = setup();
     // Multiple calls should be idempotent
     assert_eq!(vault.time_remaining(&alice), 0);
     assert_eq!(vault.time_remaining(&alice), 0);

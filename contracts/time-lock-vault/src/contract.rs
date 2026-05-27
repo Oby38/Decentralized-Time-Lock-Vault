@@ -2,8 +2,7 @@ use soroban_sdk::{contract, contractimpl, token, Address, Env};
 
 use crate::{
     errors::VaultError,
-    events,
-    storage,
+    events, storage,
     types::{VaultEntry, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS},
 };
 
@@ -135,8 +134,7 @@ impl TimeLockVault {
         depositor.require_auth();
 
         // --- Load deposit (bumps TTL — this is a state-changing call) ---
-        let entry = storage::get_deposit(&env, &depositor)
-            .ok_or(VaultError::NoDepositFound)?;
+        let entry = storage::get_deposit(&env, &depositor).ok_or(VaultError::NoDepositFound)?;
 
         // --- Time check ---
         let now = env.ledger().timestamp();
@@ -149,11 +147,7 @@ impl TimeLockVault {
 
         // --- Transfer tokens from contract → depositor ---
         let token_client = token::Client::new(&env, &entry.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &depositor,
-            &entry.amount,
-        );
+        token_client.transfer(&env.current_contract_address(), &depositor, &entry.amount);
 
         // --- Emit event ---
         events::withdraw(&env, &depositor, &entry.token, entry.amount);
@@ -190,19 +184,14 @@ impl TimeLockVault {
         }
 
         // --- Load deposit ---
-        let entry = storage::get_deposit(&env, &depositor)
-            .ok_or(VaultError::NoDepositFound)?;
+        let entry = storage::get_deposit(&env, &depositor).ok_or(VaultError::NoDepositFound)?;
 
         // --- Checks-Effects-Interactions ---
         storage::remove_deposit(&env, &depositor);
 
         // --- Return funds to depositor (NOT to admin) ---
         let token_client = token::Client::new(&env, &entry.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &depositor,
-            &entry.amount,
-        );
+        token_client.transfer(&env.current_contract_address(), &depositor, &entry.amount);
 
         // --- Emit event ---
         events::emergency_withdraw(&env, &admin, &depositor, &entry.token, entry.amount);
@@ -224,11 +213,7 @@ impl TimeLockVault {
     ///
     /// # Errors
     /// * `Unauthorized` — Caller is not the current admin.
-    pub fn transfer_admin(
-        env: Env,
-        admin: Address,
-        new_admin: Address,
-    ) -> Result<(), VaultError> {
+    pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), VaultError> {
         admin.require_auth();
 
         let stored_admin = storage::get_admin(&env).ok_or(VaultError::Unauthorized)?;
@@ -301,7 +286,9 @@ impl TimeLockVault {
         }
 
         // Remove admin and any pending transfer.
-        env.storage().persistent().remove(&crate::types::VaultKey::Admin);
+        env.storage()
+            .persistent()
+            .remove(&crate::types::VaultKey::Admin);
         storage::remove_pending_admin(&env);
 
         events::admin_renounced(&env, &admin);
@@ -331,11 +318,7 @@ impl TimeLockVault {
             None => 0,
             Some(entry) => {
                 let now = env.ledger().timestamp();
-                if now >= entry.unlock_time {
-                    0
-                } else {
-                    entry.unlock_time - now
-                }
+                entry.unlock_time.saturating_sub(now)
             }
         }
     }
