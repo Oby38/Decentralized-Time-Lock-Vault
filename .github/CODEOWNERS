@@ -1,0 +1,6 @@
+# Default owner for all files
+* @kenedybok3
+
+# Security-sensitive files require explicit review
+/contracts/time-lock-vault/src/contract.rs @kenedybok3
+/contracts/time-lock-vault/src/storage.rs @kenedybok3
