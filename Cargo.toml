@@ -10,7 +10,7 @@ soroban-sdk = { version = "22.0.0" }
 [profile.release]
 opt-level = "z"
 overflow-checks = true
-debug = 0
+debug = false
 strip = "symbols"
 debug-assertions = false
 panic = "abort"
