@@ -1,7 +1,6 @@
 use soroban_sdk::contracterror;
 
 /// All contract-level errors.
-/// These map to u32 codes returned to the caller on failure.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -19,7 +18,6 @@ pub enum VaultError {
     FundsStillLocked = 4,
 
     /// A deposit already exists for this address.
-    /// Users must withdraw before creating a new deposit.
     DepositAlreadyExists = 5,
 
     /// The requested lock duration exceeds the maximum allowed.
@@ -33,10 +31,13 @@ pub enum VaultError {
 
     /// penalty_bps exceeds 10000 (100%).
     InvalidPenaltyBps = 9,
-    
+
     /// The requested lock duration is shorter than the minimum allowed.
-    LockDurationTooShort = 9,
+    LockDurationTooShort = 10,
 
     /// The nominated admin address is invalid (e.g., same as current admin).
-    InvalidAdmin = 10,
+    InvalidAdmin = 11,
+
+    /// `batch_emergency_withdraw` was called with more than `MAX_BATCH_SIZE` depositors.
+    BatchTooLarge = 12,
 }
