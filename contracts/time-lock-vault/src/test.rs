@@ -684,6 +684,24 @@ fn test_cancel_transfer_admin_clears_pending() {
 }
 
 #[test]
+fn test_cancel_transfer_admin_emits_event() {
+    let (env, vault, _token, admin, _alice) = setup();
+    let new_admin: Address = Address::generate(&env);
+    vault.transfer_admin(&admin, &new_admin);
+    vault.cancel_transfer_admin(&admin);
+
+    let last = env.events().all().last().unwrap();
+    assert_eq!(
+        last,
+        (
+            vault.address.clone(),
+            (Symbol::new(&env, "adm_xfr_cancel"), admin.clone()).into_val(&env),
+            ().into_val(&env),
+        )
+    );
+}
+
+#[test]
 fn test_cancel_transfer_admin_by_non_admin_fails() {
     let (env, vault, _token, admin, _alice, _fee) = setup();
     let new_admin: Address = Address::generate(&env);

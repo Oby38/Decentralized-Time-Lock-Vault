@@ -344,6 +344,7 @@ impl TimeLockVault {
             return Err(VaultError::Unauthorized);
         }
         storage::remove_pending_admin(&env);
+        events::admin_transfer_cancelled(&env, &admin);
         Ok(())
     }
 

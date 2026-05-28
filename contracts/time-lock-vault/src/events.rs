@@ -45,6 +45,11 @@ pub fn admin_transfer_accepted(env: &Env, new_admin: &Address) {
     env.events().publish(topics, ());
 }
 
+pub fn admin_transfer_cancelled(env: &Env, admin: &Address) {
+    let topics = (Symbol::new(env, "adm_xfr_cancel"), admin.clone());
+    env.events().publish(topics, ());
+}
+
 pub fn admin_renounced(env: &Env, former_admin: &Address) {
     let topics = (Symbol::new(env, "adm_renounce"), former_admin.clone());
     env.events().publish(topics, ());
