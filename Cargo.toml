@@ -20,3 +20,8 @@ lto = true
 [profile.release-with-logs]
 inherits = "release"
 debug-assertions = true
+
+[workspace.metadata]
+homepage = "https://github.com/kenedybok3/Decentralized-Time-Lock-Vault"
+repository = "https://github.com/kenedybok3/Decentralized-Time-Lock-Vault"
+license = "MIT"
