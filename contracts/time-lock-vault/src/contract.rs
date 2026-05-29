@@ -108,7 +108,6 @@ impl TimeLockVault {
             token: token.clone(),
             amount,
             unlock_time,
-            depositor: depositor.clone(),
             penalty_bps,
         };
         storage::set_deposit(&env, &depositor, &entry);
@@ -258,7 +257,7 @@ impl TimeLockVault {
         debug_assert!(entry.amount > 0, "transfer amount must be positive");
         token_client.transfer(&env.current_contract_address(), &depositor, &entry.amount);
 
-        events::emergency_withdraw(&env, &admin, &depositor, &entry.token, entry.amount);
+        events::emergency_withdraw(&env, &admin, &depositor, &entry.token, entry.amount, entry.unlock_time);
 
         Ok(())
     }
@@ -334,6 +333,7 @@ impl TimeLockVault {
                 &depositor,
                 &entry.token,
                 entry.amount,
+                entry.unlock_time,
             );
 
             results.push_back(WithdrawResult { depositor, success: true });

@@ -6,11 +6,11 @@ WASM_TARGET  := wasm32-unknown-unknown
 WASM_OUT     := target/wasm32-unknown-unknown/release/time_lock_vault.wasm
 OPTIMIZED    := target/time_lock_vault.optimized.wasm
 
-.PHONY: all build test fmt fmt-check lint check audit deny doc clean optimize deploy-testnet size check-wasm-size smoke-test-local help
-.PHONY: all build test fmt fmt-fix lint clean optimize deploy-testnet size check audit deny
-.PHONY: all build test fmt fmt-fix lint clean optimize deploy-testnet size check doc smoke-test-local
-.PHONY: all build test fmt lint clean optimize deploy-testnet size check audit deny
-.PHONY: all build test fmt lint clean optimize deploy-testnet size check doc smoke-test-local install-tools
+.PHONY: all build test fmt fmt-check lint geiger check audit deny doc clean optimize deploy-testnet size check-wasm-size smoke-test-local help
+.PHONY: all build test fmt fmt-fix lint geiger clean optimize deploy-testnet size check audit deny
+.PHONY: all build test fmt fmt-fix lint geiger clean optimize deploy-testnet size check doc smoke-test-local
+.PHONY: all build test fmt lint geiger clean optimize deploy-testnet size check audit deny
+.PHONY: all build test fmt lint geiger clean optimize deploy-testnet size check doc smoke-test-local install-tools
 
 all: lint test ## Default: lint + test
 
@@ -41,13 +41,16 @@ fmt-check:
 lint: ## Run Clippy linter (fail on warnings)
 	cargo clippy --all-targets --features testutils -- -D warnings
 
-check: fmt-check lint test audit deny ## Run fmt-check + lint + test + audit + deny in sequence (mirrors CI)
+check: fmt-check lint test audit deny geiger ## Run fmt-check + lint + test + audit + deny + geiger in sequence (mirrors CI)
 
 audit: ## Check dependencies for known security vulnerabilities
 	cargo audit
 
 deny: ## Check dependencies for license and ban policy compliance
 	cargo deny check
+
+geiger: ## Scan dependency tree for unsafe Rust code
+	cargo geiger --all-features
 
 doc: ## Generate and open Rust API docs
 	cargo doc --no-deps --open
@@ -78,9 +81,10 @@ check-wasm-size: optimize ## Fail if optimized WASM exceeds MAX_WASM_BYTES (defa
 smoke-test-local: build ## Run smoke tests against a local Soroban standalone node (requires stellar CLI)
 	bash scripts/smoke_test_local.sh
 
-## Install all required dev tools (stellar-cli, cargo-watch, cargo-audit, cargo-deny)
+## Install all required dev tools (stellar-cli, cargo-watch, cargo-audit, cargo-deny, cargo-geiger)
 install-tools:
 	cargo install --locked stellar-cli
 	cargo install cargo-watch
 	cargo install cargo-audit
 	cargo install cargo-deny
+	cargo install cargo-geiger

@@ -53,7 +53,6 @@ pub struct VaultEntry {
     pub token: Address,
     pub amount: i128,
     pub unlock_time: u64,
-    pub depositor: Address,
     /// Early-exit penalty in basis points (0–10000). Charged on cancel_deposit.
     pub penalty_bps: u32,
 }

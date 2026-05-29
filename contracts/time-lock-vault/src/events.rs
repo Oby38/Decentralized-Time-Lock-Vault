@@ -16,13 +16,14 @@ pub fn emergency_withdraw(
     depositor: &Address,
     token: &Address,
     amount: i128,
+    unlock_time: u64,
 ) {
     let topics = (
         Symbol::new(env, "emrg_wdraw"),
         admin.clone(),
         depositor.clone(),
     );
-    env.events().publish(topics, (token.clone(), amount));
+    env.events().publish(topics, (token.clone(), amount, unlock_time));
 }
 
 /// Emitted once per successfully processed depositor inside `batch_emergency_withdraw`.
@@ -33,8 +34,9 @@ pub fn batch_emergency_withdraw_item(
     depositor: &Address,
     token: &Address,
     amount: i128,
+    unlock_time: u64,
 ) {
-    emergency_withdraw(env, admin, depositor, token, amount);
+    emergency_withdraw(env, admin, depositor, token, amount, unlock_time);
 }
 
 pub fn admin_transfer_initiated(env: &Env, current_admin: &Address, pending_admin: &Address) {
