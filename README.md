@@ -401,6 +401,17 @@ export SOROBAN_SECRET_KEY=S...
 make deploy-testnet
 ```
 
+### Release Deployment (CI)
+
+Pushing a version tag triggers the `deploy-testnet` CI job automatically:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The job requires the `SOROBAN_SECRET_KEY` secret to be set in the repository's **testnet** environment (`Settings → Environments → testnet → Secrets`). After the run, the deployed contract ID appears in the job's summary tab.
+
 ### Smoke Test (local node)
 
 Runs a quick end-to-end test against a local Soroban standalone node — no funded account or testnet access required.
