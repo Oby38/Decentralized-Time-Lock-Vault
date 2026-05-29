@@ -3,7 +3,7 @@
 extern crate std;
 
 use soroban_sdk::{
-    testutils::{Address as _, Events, Ledger, LedgerInfo},
+    testutils::{Address as _, Ledger, LedgerInfo},
     token::{Client as TokenClient, StellarAssetClient},
     Address, Env, IntoVal, Symbol, Vec, symbol_short,
 };
@@ -35,6 +35,28 @@ fn setup() -> (Env, TimeLockVaultClient<'static>, Address, Address, Address) {
     StellarAssetClient::new(&env, &token_address).mint(&alice, &10_000);
 
     vault.initialize(&admin, &None, &None);
+
+    (env, vault, token_address, admin, alice)
+}
+
+fn setup_with_limits(
+    max_deposit: Option<i128>,
+    max_lock_secs: Option<u64>,
+) -> (Env, TimeLockVaultClient<'static>, Address, Address, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let vault_id = env.register(TimeLockVault, ());
+    let vault = TimeLockVaultClient::new(&env, &vault_id);
+
+    let admin: Address = Address::generate(&env);
+    let alice: Address = Address::generate(&env);
+
+    let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_address = token_id.address();
+
+    StellarAssetClient::new(&env, &token_address).mint(&alice, &1_000_000);
+    vault.initialize(&admin, &max_deposit, &max_lock_secs);
 
     (env, vault, token_address, admin, alice)
 }
@@ -75,7 +97,6 @@ fn test_is_initialized() {
     let vault_id = env.register(TimeLockVault, ());
     let vault = TimeLockVaultClient::new(&env, &vault_id);
     let admin: Address = Address::generate(&env);
-
     assert!(!vault.is_initialized());
     vault.initialize(&admin, &None, &None);
     assert!(vault.is_initialized());
@@ -267,6 +288,18 @@ fn test_withdraw_before_unlock_fails() {
 fn test_withdraw_no_deposit_fails() {
     let (_env, vault, _token, _admin, alice) = setup();
     assert_eq!(vault.try_withdraw(&alice), Err(Ok(VaultError::NoDepositFound)));
+}
+
+#[test]
+fn test_redeposit_after_withdraw_succeeds() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    let unlock_time = env.ledger().timestamp() + 3600;
+    vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
+    advance_time(&env, 3601);
+    vault.withdraw(&alice);
+    let new_unlock = env.ledger().timestamp() + 7200;
+    vault.deposit(&alice, &token, &500, &new_unlock, &0);
+    assert_eq!(vault.get_vault(&alice).unwrap().amount, 500);
 }
 
 // ================================================================
@@ -852,13 +885,13 @@ fn test_redeposit_after_withdraw_succeeds() {
 
 #[test]
 fn test_depositor_count_empty() {
-    let (_env, vault, _token, _admin, _alice) = setup();
+    let (_env, vault, _token, _admin, _alice, _fee) = setup();
     assert_eq!(vault.get_depositor_count(), 0);
 }
 
 #[test]
 fn test_depositor_count_single_entry() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     assert_eq!(vault.get_depositor_count(), 1);
@@ -866,7 +899,7 @@ fn test_depositor_count_single_entry() {
 
 #[test]
 fn test_depositor_count_multiple_entries() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let bob: Address = Address::generate(&env);
     let carol: Address = Address::generate(&env);
     StellarAssetClient::new(&env, &token).mint(&bob, &5_000);
@@ -881,7 +914,7 @@ fn test_depositor_count_multiple_entries() {
 
 #[test]
 fn test_depositor_removed_on_withdraw() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     advance_time(&env, 3601);
@@ -891,7 +924,7 @@ fn test_depositor_removed_on_withdraw() {
 
 #[test]
 fn test_depositor_removed_on_emergency_withdraw() {
-    let (env, vault, token, admin, alice) = setup();
+    let (env, vault, token, admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 86400;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     vault.emergency_withdraw(&admin, &alice);
@@ -900,7 +933,7 @@ fn test_depositor_removed_on_emergency_withdraw() {
 
 #[test]
 fn test_pagination_offset_and_limit() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let bob: Address = Address::generate(&env);
     let carol: Address = Address::generate(&env);
     StellarAssetClient::new(&env, &token).mint(&bob, &5_000);
@@ -1025,7 +1058,7 @@ fn test_bump_target_covers_max_lock_duration() {
 
 #[test]
 fn test_auth_deposit_requires_depositor() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     assert_eq!(env.auths()[0].0, alice);
@@ -1033,7 +1066,7 @@ fn test_auth_deposit_requires_depositor() {
 
 #[test]
 fn test_auth_withdraw_requires_depositor() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     advance_time(&env, 3601);
@@ -1043,7 +1076,7 @@ fn test_auth_withdraw_requires_depositor() {
 
 #[test]
 fn test_auth_emergency_withdraw_requires_admin() {
-    let (env, vault, token, admin, alice) = setup();
+    let (env, vault, token, admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 86400;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     vault.emergency_withdraw(&admin, &alice);
@@ -1071,6 +1104,10 @@ fn test_emergency_withdraw_clears_vault_entry() {
 
     assert!(vault.get_vault(&alice).is_none());
 }
+
+// ================================================================
+//  New view functions
+// ================================================================
 
 #[test]
 fn test_emergency_withdraw_twice_returns_no_deposit_found() {

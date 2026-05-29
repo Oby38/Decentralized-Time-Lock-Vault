@@ -408,6 +408,10 @@ impl TimeLockVault {
         }
     }
 
+    pub fn get_time(env: Env) -> u64 {
+        env.ledger().timestamp()
+    }
+
     pub fn get_admin(env: Env) -> Option<Address> {
         storage::get_admin(&env)
     }

@@ -94,7 +94,7 @@ All entries use TTL bump threshold ≈ 30 days and target ≈ 5.2 years so a max
         ├── lib.rs          # Crate root & module declarations
         ├── contract.rs     # All public entry points
         ├── types.rs        # VaultKey, VaultEntry, protocol constants
-        ├── errors.rs       # VaultError enum (8 typed codes)
+        ├── errors.rs       # VaultError enum (9 typed codes)
         ├── events.rs       # Event emission helpers
         ├── storage.rs      # Persistent storage helpers + TTL bump logic
         └── test.rs         # Full unit test suite (48+ tests)
@@ -106,8 +106,6 @@ All entries use TTL bump threshold ≈ 30 days and target ≈ 5.2 years so a max
 
 ### Initialization
 
-#### `initialize(admin: Address, fee_recipient: Address)`
-Sets the admin address and the fee recipient for early-exit penalties. Must be called once after deployment.
 #### `initialize(admin: Address, max_deposit: Option<i128>, max_lock_secs: Option<u64>)`
 Sets the admin address. Optionally overrides the compile-time limits for this deployment. Pass `None` to use the defaults (`10^15` and `5 years`). Must be called once after deployment.
 
@@ -177,8 +175,14 @@ Permanently removes admin privileges. After this call, `emergency_withdraw` and 
 #### `get_vault(depositor) → Option<VaultEntry>`
 Returns the current vault entry. Does **not** bump storage TTL (no extra fees).
 
+#### `get_vault_with_time_remaining(depositor) → Option<(VaultEntry, u64)>`
+Returns `Some((entry, seconds_remaining))` if a deposit exists, or `None`. Combines `get_vault` and `time_remaining` into a single RPC call.
+
 #### `time_remaining(depositor) → u64`
 Returns seconds until unlock. Returns `0` if unlocked or no deposit exists. Does **not** bump TTL.
+
+#### `has_deposit(depositor) → bool`
+Returns `true` if `depositor` has an active deposit. Cheaper than `get_vault` — no `VaultEntry` deserialization.
 
 #### `get_time() → u64`
 Returns the current ledger timestamp.
@@ -188,6 +192,9 @@ Returns the current admin, or `None` if renounced.
 
 #### `get_pending_admin() → Option<Address>`
 Returns the pending admin during a transfer, or `None`.
+
+#### `is_admin(address) → bool`
+Returns `true` if `address` is the current admin. Returns `false` if admin has been renounced.
 
 #### `get_fee_recipient() → Option<Address>`
 Returns the fee recipient address set at initialization.
@@ -332,7 +339,6 @@ make test
 
 > Tests run natively (no `--target` flag) so that `soroban-sdk`'s `testutils` feature works. Never run `cargo test --target wasm32-unknown-unknown`.
 
-### Full CI check (fmt + lint + test)
 ### Full CI check (fmt + lint + test + audit + deny)
 
 ```bash
