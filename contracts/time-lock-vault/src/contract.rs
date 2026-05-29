@@ -253,7 +253,7 @@ impl TimeLockVault {
         let token_client = token::Client::new(&env, &entry.token);
         token_client.transfer(&env.current_contract_address(), &depositor, &entry.amount);
 
-        events::emergency_withdraw(&env, &admin, &depositor, &entry.token, entry.amount);
+        events::emergency_withdraw(&env, &admin, &depositor, &entry.token, entry.amount, entry.unlock_time);
 
         Ok(())
     }
@@ -329,6 +329,7 @@ impl TimeLockVault {
                 &depositor,
                 &entry.token,
                 entry.amount,
+                entry.unlock_time,
             );
 
             results.push_back(WithdrawResult { depositor, success: true });
