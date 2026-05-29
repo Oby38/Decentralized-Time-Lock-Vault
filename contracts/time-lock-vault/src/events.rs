@@ -25,15 +25,16 @@ pub fn emergency_withdraw(
     env.events().publish(topics, (token.clone(), amount));
 }
 
-pub fn deposit_cancelled(
+/// Emitted once per successfully processed depositor inside `batch_emergency_withdraw`.
+/// Same shape as `emergency_withdraw` so event consumers need no special handling.
+pub fn batch_emergency_withdraw_item(
     env: &Env,
+    admin: &Address,
     depositor: &Address,
     token: &Address,
     amount: i128,
-    penalty: i128,
 ) {
-    let topics = (Symbol::new(env, "dep_cancel"), depositor.clone(), token.clone());
-    env.events().publish(topics, (amount, penalty));
+    emergency_withdraw(env, admin, depositor, token, amount);
 }
 
 pub fn admin_transfer_initiated(env: &Env, current_admin: &Address, pending_admin: &Address) {
@@ -46,7 +47,23 @@ pub fn admin_transfer_accepted(env: &Env, new_admin: &Address) {
     env.events().publish(topics, ());
 }
 
+pub fn admin_transfer_cancelled(env: &Env, admin: &Address) {
+    let topics = (Symbol::new(env, "adm_xfr_cancel"), admin.clone());
+    env.events().publish(topics, ());
+}
+
 pub fn admin_renounced(env: &Env, former_admin: &Address) {
     let topics = (Symbol::new(env, "adm_renounce"), former_admin.clone());
     env.events().publish(topics, ());
+}
+
+pub fn deposit_cancelled(
+    env: &Env,
+    depositor: &Address,
+    token: &Address,
+    amount: i128,
+    penalty: i128,
+) {
+    let topics = (Symbol::new(env, "dep_cancel"), depositor.clone(), token.clone());
+    env.events().publish(topics, (amount, penalty));
 }

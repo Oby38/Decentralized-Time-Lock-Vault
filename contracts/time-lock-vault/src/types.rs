@@ -10,6 +10,14 @@ pub const MAX_LOCK_DURATION_SECS: u64 = 157_788_000;
 /// Minimum lock duration: prevent trivial, pointless vaults that waste storage.
 pub const MIN_LOCK_DURATION_SECS: u64 = 60;
 
+/// Maximum depositors per `batch_emergency_withdraw` call.
+///
+/// Soroban's per-transaction instruction budget is ~100M instructions.
+/// Each iteration performs two persistent-storage removes, one token transfer,
+/// and one event publish — roughly 1–2M instructions each.
+/// 25 leaves comfortable headroom for the common migration use-case.
+pub const MAX_BATCH_SIZE: u32 = 25;
+
 // ----------------------------------------------------------------
 //  Storage Keys
 // ----------------------------------------------------------------
@@ -28,9 +36,9 @@ pub enum VaultKey {
     DepositorList,
     /// Address that receives penalty fees on early cancellation
     FeeRecipient,
-    /// Runtime-configurable max deposit amount (overrides compile-time constant).
+    /// Runtime-configurable max deposit amount (overrides compile-time constant)
     MaxDeposit,
-    /// Runtime-configurable max lock duration in seconds (overrides compile-time constant).
+    /// Runtime-configurable max lock duration in seconds (overrides compile-time constant)
     MaxLockSecs,
 }
 
@@ -38,6 +46,7 @@ pub enum VaultKey {
 //  Data Structures
 // ----------------------------------------------------------------
 
+/// Represents a single vault deposit.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VaultEntry {
@@ -47,4 +56,13 @@ pub struct VaultEntry {
     pub depositor: Address,
     /// Early-exit penalty in basis points (0–10000). Charged on cancel_deposit.
     pub penalty_bps: u32,
+}
+
+/// Per-depositor result returned by `batch_emergency_withdraw`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawResult {
+    pub depositor: Address,
+    /// `true` if funds were successfully transferred; `false` if skipped (no deposit).
+    pub success: bool,
 }

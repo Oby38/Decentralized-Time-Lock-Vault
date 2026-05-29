@@ -6,68 +6,68 @@ WASM_TARGET  := wasm32-unknown-unknown
 WASM_OUT     := target/wasm32-unknown-unknown/release/time_lock_vault.wasm
 OPTIMIZED    := target/time_lock_vault.optimized.wasm
 
+.PHONY: all build test fmt fmt-check lint check audit deny doc clean optimize deploy-testnet size check-wasm-size smoke-test-local help
+.PHONY: all build test fmt fmt-fix lint clean optimize deploy-testnet size check audit deny
+.PHONY: all build test fmt fmt-fix lint clean optimize deploy-testnet size check doc smoke-test-local
 .PHONY: all build test fmt lint clean optimize deploy-testnet size check audit deny
-.PHONY: all build test fmt lint clean optimize deploy-testnet size check doc smoke-test-local
+.PHONY: all build test fmt lint clean optimize deploy-testnet size check doc smoke-test-local install-tools
 
-## Default: lint + test
-all: lint test
+all: lint test ## Default: lint + test
 
-## Compile the contract to WASM
-build:
+help: ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+build: ## Compile the contract to WASM
 	cargo build --target $(WASM_TARGET) --release
 
-## Run all unit tests (native, no WASM needed)
-test:
+test: ## Run all unit tests (native, no WASM needed)
 	cargo test --features testutils
 
-## Format all Rust source files
-fmt:
+fmt: ## Format all Rust source files
 	cargo fmt --all
+
+fmt-check: ## Check formatting without modifying files (used in CI)
+## Format all Rust source files
+fmt-fix:
+	cargo fmt --all
+
+## Backwards-compat alias for fmt-fix
+fmt: fmt-fix
 
 ## Check formatting without modifying files (used in CI)
 fmt-check:
 	cargo fmt --all -- --check
 
-## Run Clippy linter (fail on warnings)
-lint:
+lint: ## Run Clippy linter (fail on warnings)
 	cargo clippy --all-targets --features testutils -- -D warnings
 
-## Run fmt-check + lint + test + audit + deny in sequence (mirrors CI)
-check: fmt-check lint test audit deny
+check: fmt-check lint test audit deny ## Run fmt-check + lint + test + audit + deny in sequence (mirrors CI)
 
-## Check dependencies for known security vulnerabilities
-audit:
+audit: ## Check dependencies for known security vulnerabilities
 	cargo audit
 
-## Check dependencies for license and ban policy compliance
-deny:
+deny: ## Check dependencies for license and ban policy compliance
 	cargo deny check
 
-## Generate and open Rust API docs
-doc:
+doc: ## Generate and open Rust API docs
 	cargo doc --no-deps --open
 
-## Remove build artifacts
-clean:
+clean: ## Remove build artifacts
 	cargo clean
 
-## Optimize WASM binary with soroban CLI
-optimize: build
+optimize: build ## Optimize WASM binary with soroban CLI
 	soroban contract optimize --wasm $(WASM_OUT) --wasm-out $(OPTIMIZED)
 	@echo "Optimized WASM: $(OPTIMIZED)"
 	@ls -lh $(OPTIMIZED)
 
-## Deploy to Stellar Testnet (requires SOROBAN_SECRET_KEY env var)
-deploy-testnet: optimize
+deploy-testnet: optimize ## Deploy to Stellar Testnet (requires SOROBAN_SECRET_KEY env var)
 	bash scripts/deploy_testnet.sh
 
-## Show raw WASM size
-size: build
+size: build ## Show raw WASM size
 	@ls -lh $(WASM_OUT)
 
-## Fail if optimized WASM exceeds MAX_WASM_BYTES (default 65536 = 64 KB)
 MAX_WASM_BYTES ?= 65536
-check-wasm-size: optimize
+check-wasm-size: optimize ## Fail if optimized WASM exceeds MAX_WASM_BYTES (default 65536 = 64 KB)
 	@ACTUAL=$$(wc -c < $(OPTIMIZED)); \
 	echo "Optimized WASM size: $${ACTUAL} bytes (limit: $(MAX_WASM_BYTES))"; \
 	if [ "$$ACTUAL" -gt "$(MAX_WASM_BYTES)" ]; then \
@@ -75,6 +75,12 @@ check-wasm-size: optimize
 		exit 1; \
 	fi
 
-## Run smoke tests against a local Soroban standalone node (requires stellar CLI)
-smoke-test-local: build
+smoke-test-local: build ## Run smoke tests against a local Soroban standalone node (requires stellar CLI)
 	bash scripts/smoke_test_local.sh
+
+## Install all required dev tools (stellar-cli, cargo-watch, cargo-audit, cargo-deny)
+install-tools:
+	cargo install --locked stellar-cli
+	cargo install cargo-watch
+	cargo install cargo-audit
+	cargo install cargo-deny
