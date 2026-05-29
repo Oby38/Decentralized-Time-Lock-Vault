@@ -52,3 +52,7 @@ make build && make optimize
 1. Push your branch and open a PR against `main`.
 2. Fill in the PR description with a summary of changes and what was tested.
 3. Link any related issue with `Closes #<issue-number>`.
+
+## Test Snapshots
+
+Running `cargo test` may generate a `contracts/time-lock-vault/test_snapshots/` directory containing XDR snapshots of contract state produced by the Soroban test environment. These are transient build artefacts, not committed regression fixtures, and are listed in `.gitignore`. Do not commit them.
