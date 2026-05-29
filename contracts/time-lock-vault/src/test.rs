@@ -105,9 +105,55 @@ fn test_is_initialized() {
     assert!(vault.is_initialized());
 }
 
-// ================================================================
-//  Deposit — happy path
-// ================================================================
+use arbitrary::{Arbitrary, Unstructured};
+use rand::RngCore;
+
+#[derive(Arbitrary, Debug)]
+struct DepositParams {
+    amount: i128,
+    unlock_time: u64,
+}
+
+#[test]
+fn test_deposit_property_validation() {
+    let (env, vault, token, _admin, alice) = setup();
+    let mut rng = rand::thread_rng();
+
+    for _ in 0..100 {
+        let mut bytes = [0u8; 64];
+        rng.fill_bytes(&mut bytes);
+        let mut unstructured = Unstructured::new(&bytes);
+        let params: DepositParams = match Arbitrary::arbitrary(&mut unstructured) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        let now = env.ledger().timestamp();
+        let max_deposit = MAX_DEPOSIT_AMOUNT;
+        let max_lock = MAX_LOCK_DURATION_SECS;
+        let min_lock = crate::types::MIN_LOCK_DURATION_SECS;
+
+        let result = vault.try_deposit(&alice, &token, &params.amount, &params.unlock_time, &0);
+
+        if params.amount <= 0 {
+            assert_eq!(result, Err(Ok(VaultError::InvalidAmount)));
+        } else if params.amount > max_deposit {
+            assert_eq!(result, Err(Ok(VaultError::AmountTooLarge)));
+        } else if params.unlock_time <= now {
+            assert_eq!(result, Err(Ok(VaultError::UnlockTimeNotInFuture)));
+        } else if params.unlock_time.saturating_sub(now) > max_lock {
+            assert_eq!(result, Err(Ok(VaultError::LockDurationTooLong)));
+        } else if params.unlock_time.saturating_sub(now) < min_lock {
+            assert_eq!(result, Err(Ok(VaultError::LockDurationTooShort)));
+        } else {
+            // Should succeed
+            assert!(result.is_ok());
+            // Need to cleanup
+            vault.withdraw(&alice);
+        }
+    }
+}
+
 
 #[test]
 fn test_deposit_success() {
