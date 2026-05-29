@@ -354,7 +354,7 @@ impl TimeLockVault {
             return Err(VaultError::Unauthorized);
         }
         env.storage()
-            .persistent()
+            .instance()
             .remove(&crate::types::VaultKey::Admin);
         storage::remove_pending_admin(&env);
         events::admin_renounced(&env, &admin);

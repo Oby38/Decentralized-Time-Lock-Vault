@@ -81,31 +81,23 @@ pub fn remove_deposit(env: &Env, depositor: &Address, deposit_id: u32) {
 // ----------------------------------------------------------------
 
 pub fn set_admin(env: &Env, admin: &Address) {
-    env.storage().persistent().set(&VaultKey::Admin, admin);
-    env.storage()
-        .persistent()
-        .extend_ttl(&VaultKey::Admin, BUMP_THRESHOLD, BUMP_TARGET);
+    env.storage().instance().set(&VaultKey::Admin, admin);
 }
 
 pub fn get_admin(env: &Env) -> Option<Address> {
-    env.storage().persistent().get(&VaultKey::Admin)
+    env.storage().instance().get(&VaultKey::Admin)
 }
 
 pub fn set_pending_admin(env: &Env, pending: &Address) {
-    env.storage()
-        .persistent()
-        .set(&VaultKey::PendingAdmin, pending);
-    env.storage()
-        .persistent()
-        .extend_ttl(&VaultKey::PendingAdmin, BUMP_THRESHOLD, BUMP_TARGET);
+    env.storage().instance().set(&VaultKey::PendingAdmin, pending);
 }
 
 pub fn get_pending_admin(env: &Env) -> Option<Address> {
-    env.storage().persistent().get(&VaultKey::PendingAdmin)
+    env.storage().instance().get(&VaultKey::PendingAdmin)
 }
 
 pub fn remove_pending_admin(env: &Env) {
-    env.storage().persistent().remove(&VaultKey::PendingAdmin);
+    env.storage().instance().remove(&VaultKey::PendingAdmin);
 }
 
 // ----------------------------------------------------------------
