@@ -4,10 +4,8 @@ use crate::{
     errors::VaultError,
     events,
     storage,
-    types::{
-        VaultEntry, WithdrawResult, MAX_BATCH_SIZE, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS,
-        MIN_LOCK_DURATION_SECS,
-    },
+    constants::{MAX_BATCH_SIZE, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS, MIN_LOCK_DURATION_SECS},
+    types::{VaultEntry, WithdrawResult},
 };
 
 #[contract]

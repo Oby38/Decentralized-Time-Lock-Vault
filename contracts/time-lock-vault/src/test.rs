@@ -9,9 +9,10 @@ use soroban_sdk::{
 };
 
 use crate::{
+    constants::{MAX_BATCH_SIZE, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS},
     contract::{TimeLockVault, TimeLockVaultClient},
     errors::VaultError,
-    types::{WithdrawResult, MAX_BATCH_SIZE, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS},
+    types::WithdrawResult,
 };
 
 // ================================================================
