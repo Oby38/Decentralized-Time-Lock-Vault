@@ -47,6 +47,10 @@ pub fn deposit_cancelled(
     amount: i128,
     penalty: i128,
 ) {
-    let topics = (Symbol::new(env, "dep_cancel"), depositor.clone(), token.clone());
+    let topics = (
+        Symbol::new(env, "dep_cancel"),
+        depositor.clone(),
+        token.clone(),
+    );
     env.events().publish(topics, (amount, penalty));
 }
