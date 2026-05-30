@@ -240,14 +240,6 @@ impl TimeLockVault {
         admin.require_auth();
         storage::require_admin(&env, &admin)?;
 
-        storage::remove_deposit(&env, &depositor, deposit_id);
-        // --- Load deposit without bumping TTL; the entry will be deleted ---
-
-        let stored_admin = storage::get_admin(&env).ok_or(VaultError::Unauthorized)?;
-        if admin != stored_admin {
-            return Err(VaultError::Unauthorized);
-        }
-
         let entry = storage::get_deposit_readonly(&env, &depositor)
             .ok_or(VaultError::NoDepositFound)?;
 
@@ -276,12 +268,6 @@ impl TimeLockVault {
     ///
     /// **Single auth**: the admin signs once for the entire batch.
     ///
-    /// **Instruction budget**: Soroban caps each transaction at ~100M instructions.
-    /// Each iteration costs roughly 1–2M instructions (two storage removes, one token
-    /// transfer, one event). The hard cap of `MAX_BATCH_SIZE` (25) keeps the batch
-    /// well within budget. For larger sets, call this function multiple times using
-    /// `get_depositors(offset, limit)` to page through the depositor list.
-    ///
     /// # Arguments
     /// * `admin`      — Must be the current admin (signs once for the whole batch).
     /// * `depositors` — List of depositor addresses to process (max `MAX_BATCH_SIZE`).
@@ -290,20 +276,15 @@ impl TimeLockVault {
     /// A `Vec<WithdrawResult>` with one entry per input address indicating success/skip.
     ///
     /// # Errors
-    /// * `Unauthorized`    — Caller is not the admin.
-    /// * `AmountTooLarge`  — `depositors.len() > MAX_BATCH_SIZE`.
+    /// * `Unauthorized`  — Caller is not the admin.
+    /// * `BatchTooLarge` — `depositors.len() > MAX_BATCH_SIZE`.
     pub fn batch_emergency_withdraw(
         env: Env,
         admin: Address,
         depositors: Vec<Address>,
     ) -> Result<Vec<WithdrawResult>, VaultError> {
-        // Auth first — single signature covers the entire batch.
         admin.require_auth();
-
-        let stored_admin = storage::get_admin(&env).ok_or(VaultError::Unauthorized)?;
-        if admin != stored_admin {
-            return Err(VaultError::Unauthorized);
-        }
+        storage::require_admin(&env, &admin)?;
 
         if depositors.len() > MAX_BATCH_SIZE {
             return Err(VaultError::BatchTooLarge);
@@ -313,7 +294,6 @@ impl TimeLockVault {
         let mut results: Vec<WithdrawResult> = Vec::new(&env);
 
         for depositor in depositors.iter() {
-            // Best-effort: skip depositors with no active deposit.
             let entry = match storage::get_deposit_readonly(&env, &depositor) {
                 Some(e) => e,
                 None => {
