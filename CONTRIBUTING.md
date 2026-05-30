@@ -40,6 +40,33 @@ make check
 make build && make optimize
 ```
 
+## Performance Conventions
+
+### Cache `env.ledger().timestamp()` in a local variable
+
+Every call to `env.ledger().timestamp()` is a host-function invocation with a non-trivial cost in the Soroban execution environment. Always cache the result in a `let now` binding at the top of any function that reads the ledger timestamp more than once:
+
+```rust
+// good
+pub fn some_fn(env: Env, depositor: Address) -> Result<(), VaultError> {
+    let now = env.ledger().timestamp();
+    if now < entry.unlock_time {
+        return Err(VaultError::FundsStillLocked);
+    }
+    // ... use `now` again later without re-invoking the host
+}
+
+// bad — calls the host twice for the same value
+pub fn some_fn(env: Env, depositor: Address) -> Result<(), VaultError> {
+    if env.ledger().timestamp() < entry.unlock_time {
+        return Err(VaultError::FundsStillLocked);
+    }
+    let elapsed = env.ledger().timestamp() - start;
+}
+```
+
+This convention applies to any repeated host accessor (`env.ledger().sequence()`, `env.current_contract_address()`, etc.) — read once, store locally, reuse the binding.
+
 ## Before Opening a PR
 
 - [ ] `make check` passes locally
