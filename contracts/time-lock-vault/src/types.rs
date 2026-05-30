@@ -7,8 +7,10 @@ use soroban_sdk::{contracttype, Address};
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum VaultKey {
-    /// Maps depositor → VaultEntry
-    Deposit(Address),
+    /// Maps (depositor, deposit_id) → VaultEntry
+    Deposit(Address, u32),
+    /// Per-depositor monotonic counter for deposit IDs
+    DepositCounter(Address),
     /// Contract-level admin address
     Admin,
     PendingAdmin,
@@ -22,8 +24,8 @@ pub enum VaultKey {
     MaxDeposit,
     /// Runtime-configurable max lock duration in seconds (overrides compile-time constant)
     MaxLockSecs,
-    /// Global count of active deposits (u64); stored in Instance storage
-    DepositCount,
+    /// Optional beneficiary for a depositor's vault (Address → Address)
+    Beneficiary(Address),
 }
 
 // ----------------------------------------------------------------
@@ -39,6 +41,8 @@ pub struct VaultEntry {
     pub unlock_time: u64,
     /// Early-exit penalty in basis points (0–10000). Charged on cancel_deposit.
     pub penalty_bps: u32,
+    /// Optional beneficiary who receives funds on withdrawal instead of the depositor.
+    pub beneficiary: Option<Address>,
 }
 
 /// Per-depositor result returned by `batch_emergency_withdraw`.

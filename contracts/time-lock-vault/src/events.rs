@@ -27,7 +27,6 @@ pub fn emergency_withdraw(
 }
 
 /// Emitted once per successfully processed depositor inside `batch_emergency_withdraw`.
-/// Same shape as `emergency_withdraw` so event consumers need no special handling.
 pub fn batch_emergency_withdraw_item(
     env: &Env,
     admin: &Address,
@@ -68,4 +67,28 @@ pub fn deposit_cancelled(
 ) {
     let topics = (Symbol::new(env, "dep_cancel"), depositor.clone(), token.clone());
     env.events().publish(topics, (amount, penalty));
+}
+
+pub fn lock_extended(
+    env: &Env,
+    depositor: &Address,
+    deposit_id: u32,
+    old_unlock_time: u64,
+    new_unlock_time: u64,
+) {
+    let topics = (Symbol::new(env, "lock_ext"), depositor.clone());
+    env.events()
+        .publish(topics, (deposit_id, old_unlock_time, new_unlock_time));
+}
+
+/// Emitted when `renew_deposit` atomically extends the lock and/or tops up the amount.
+pub fn renew_deposit(
+    env: &Env,
+    depositor: &Address,
+    token: &Address,
+    new_amount: i128,
+    new_unlock_time: u64,
+) {
+    let topics = (Symbol::new(env, "dep_renew"), depositor.clone(), token.clone());
+    env.events().publish(topics, (new_amount, new_unlock_time));
 }

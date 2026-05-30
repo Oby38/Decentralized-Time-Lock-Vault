@@ -11,8 +11,7 @@ contracts/*/target
 .env.*.local
 
 # Editor directories
-.vscode/*
-!.vscode/settings.json
+.vscode/
 .idea/
 *.swp
 *.swo
@@ -29,9 +28,17 @@ Thumbs.db
 contracts/*/test_snapshots/
 
 # Optimized WASM output
-*.optimized.wasm
 contracts/*/optimized/
+*.wasm
 
-# Temporary / misc
-*.log
-*.tmp
+# Cargo lock for libraries (keep for binaries/contracts)
+# Cargo.lock is intentionally committed for reproducible builds
+
+# Coverage reports
+lcov.info
+tarpaulin-report.html
+coverage/
+
+# Profiling data
+*.profraw
+*.profdata
