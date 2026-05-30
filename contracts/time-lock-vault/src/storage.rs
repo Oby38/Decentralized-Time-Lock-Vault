@@ -41,11 +41,6 @@ pub fn get_deposit_readonly(env: &Env, depositor: &Address) -> Option<VaultEntry
     env.storage().persistent().get(&key)
 }
 
-pub fn has_deposit(env: &Env, depositor: &Address) -> bool {
-    let key = VaultKey::Deposit(depositor.clone());
-    env.storage().persistent().has(&key)
-}
-
 pub fn remove_deposit(env: &Env, depositor: &Address) {
     let key = VaultKey::Deposit(depositor.clone());
     env.storage().persistent().remove(&key);
@@ -167,46 +162,6 @@ fn save_depositor_list(env: &Env, list: &Vec<Address>) {
 }
 
 /// Append `depositor` to the global depositor list.
-pub fn add_depositor(env: &Env, depositor: &Address) {
-    let mut list = get_depositor_list(env);
-    for addr in list.iter() {
-        if addr == depositor {
-            return;
-        }
-    }
-    list.push_back(depositor.clone());
-    save_depositor_list(env, &list);
-}
-
-/// Remove `depositor` from the global depositor list.
-pub fn remove_depositor(env: &Env, depositor: &Address) {
-    let list = get_depositor_list(env);
-    let mut new_list: Vec<Address> = Vec::new(env);
-    for addr in list.iter() {
-        if &addr != depositor {
-            new_list.push_back(addr);
-        }
-    }
-    save_depositor_list(env, &new_list);
-}
-
-/// Returns the total number of active depositors.
-pub fn get_depositor_count(env: &Env) -> u32 {
-    get_depositor_list(env).len()
-}
-
-/// Returns a page of depositors starting at `offset`, up to `limit` entries.
-pub fn get_depositors_page(env: &Env, offset: u32, limit: u32) -> Vec<Address> {
-    let list = get_depositor_list(env);
-    let len = list.len();
-    let mut page: Vec<Address> = Vec::new(env);
-    let end = (offset + limit).min(len);
-    for i in offset..end {
-        page.push_back(list.get(i).unwrap());
-    }
-    page
-}
-
 pub fn add_depositor(env: &Env, depositor: &Address) {
     let mut list = get_depositor_list(env);
     list.push_back(depositor.clone());
