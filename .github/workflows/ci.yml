@@ -244,3 +244,10 @@ jobs:
           echo "| Contract ID | \`${CONTRACT_ID}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Network | testnet |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Tag | ${{ github.ref_name }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload deploy log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-log
+          path: deploy_testnet.log
