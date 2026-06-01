@@ -1,6 +1,21 @@
 # 🔒 Decentralized Time-Lock Vault
 
+[![Rust](https://img.shields.io/badge/Rust-1.81%2B-orange?logo=rust)](https://www.rust-lang.org/)
+[![Soroban SDK](https://img.shields.io/badge/Soroban-SDK%20v22-blue?logo=stellar)](https://github.com/stellar/rs-soroban-sdk)
+[![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
+[![Tests](https://github.com/kenedybok3/Decentralized-Time-Lock-Vault/actions/workflows/ci.yml/badge.svg)](https://github.com/kenedybok3/Decentralized-Time-Lock-Vault/actions)
+
 A production-ready Soroban smart contract on the Stellar blockchain that locks XLM or any Stellar asset until a future timestamp is reached.
+
+**Table of Contents**
+- [Overview](#overview)
+- [How It Works](#how-it-works)
+- [Architecture](#architecture)
+- [Contract API](#contract-api)
+- [Security Properties](#security-properties)
+- [Getting Started](#getting-started)
+- [Deployment Checklist](#deployment-checklist)
+- [Known Limitations](#known-limitations)
 
 ---
 
@@ -19,12 +34,14 @@ A production-ready Soroban smart contract on the Stellar blockchain that locks X
 
 ## How It Works
 
-1. A user calls `deposit(token, amount, unlock_time)` — tokens transfer from their wallet into the contract.
-2. The contract stores a `VaultEntry` in **Persistent Storage** keyed by the depositor's address.
-3. When the user calls `withdraw()`, the contract checks `env.ledger().timestamp() >= unlock_time`.
-4. If the time has passed, tokens are returned. Otherwise the call fails with `FundsStillLocked`.
-5. An admin can perform emergency withdrawals (funds always return to the depositor, never to the admin).
-6. Admin rights can be transferred via a two-step process, or permanently renounced to make the vault fully trustless.
+The deposit and withdrawal lifecycle:
+
+1. **Deposit** — A user calls `deposit(token, amount, unlock_time)` → tokens transfer from their wallet into the contract
+2. **Storage** — The contract stores a `VaultEntry` in **Persistent Storage** keyed by the depositor's address
+3. **Verification** — When the user calls `withdraw()`, the contract checks `env.ledger().timestamp() >= unlock_time`
+4. **Unlock** — If the time has passed, tokens are returned. Otherwise the call fails with `FundsStillLocked`
+5. **Admin Recovery** — An admin can perform emergency withdrawals (funds always return to the depositor, never to the admin)
+6. **Trustless Mode** — Admin rights can be transferred via a two-step process, or permanently renounced to make the vault fully trustless
 
 ---
 
@@ -104,14 +121,14 @@ All entries use TTL bump threshold ≈ 30 days and target ≈ 5.2 years so a max
 
 ## Contract API
 
-### Initialization
+### 🔧 Initialization
 
 #### `initialize(admin: Address, max_deposit: Option<i128>, max_lock_secs: Option<u64>)`
 Sets the admin address. Optionally overrides the compile-time limits for this deployment. Pass `None` to use the defaults (`10^15` and `5 years`). Must be called once after deployment.
 
 ---
 
-### Core
+### 💰 Core Functions
 
 #### `deposit(depositor, token, amount, unlock_time, penalty_bps)`
 Locks `amount` of `token` until `unlock_time` (Unix seconds).
@@ -132,7 +149,7 @@ Withdraws funds if `now >= unlock_time`. Fails with `FundsStillLocked` otherwise
 
 ---
 
-### Admin
+### 👨‍⚖️ Admin Functions
 
 #### `emergency_withdraw(admin, depositor)`
 Admin-only. Returns funds to the depositor regardless of lock time. Funds always go to the depositor — never to the admin.
@@ -170,7 +187,7 @@ Permanently removes admin privileges. After this call, `emergency_withdraw` and 
 
 ---
 
-### Read-only Queries
+### 📖 Read-only Queries
 
 #### `get_vault(depositor, deposit_id) → Option<VaultEntry>`
 Returns the current vault entry. Does **not** bump storage TTL (no extra fees).
@@ -211,7 +228,7 @@ Use `offset=0, limit=N` for the first page, then increment `offset` by `N` for s
 
 ---
 
-## Events
+## 📋 Events
 
 All events are emitted via `env.events().publish(topics, data)`.
 
@@ -229,7 +246,7 @@ All `amount` and `penalty` values are `i128` token units. `deposit_id` is a `u32
 
 ---
 
-## Storage Layout
+## 🗄️ Storage Layout
 
 All entries use **Persistent Storage** with TTL bump threshold ≈ 30 days (`BUMP_THRESHOLD = 518_400` ledgers) and target ≈ 5.2 years (`BUMP_TARGET = 33_000_000` ledgers), ensuring a max-duration deposit cannot expire before its unlock time.
 
@@ -251,7 +268,7 @@ TTL is bumped on every **write**. Read-only query functions (`get_vault`, `time_
 
 ---
 
-## Error Codes
+## ❌ Error Codes
 
 | Code | Name | Meaning |
 |---|---|---|
@@ -270,7 +287,7 @@ TTL is bumped on every **write**. Read-only query functions (`get_vault`, `time_
 
 ---
 
-## Security Properties
+## 🔐 Security Properties
 
 | Property | Implementation |
 |---|---|
@@ -287,7 +304,7 @@ TTL is bumped on every **write**. Read-only query functions (`get_vault`, `time_
 
 ---
 
-## Upgradeability
+## 🔄 Upgradeability
 
 Soroban contracts are **immutable by default** — once deployed, the contract code cannot be changed or patched.
 
@@ -302,19 +319,9 @@ Plan deployments carefully. Audit the contract before going to mainnet, because 
 
 ---
 
-## Known Limitations
+## 🚀 Getting Started
 
-- **One active deposit per address in the documented flow.** The README and error model describe deposits as address-keyed entries, so a depositor should withdraw or cancel the current vault entry before opening another one.
-- **No partial withdrawals.** A withdrawal or emergency withdrawal returns the full stored amount for the vault entry; the contract does not expose an amount parameter for withdrawing only part of a deposit.
-- **No early user withdrawal.** Standard `withdraw` only succeeds once `unlock_time` has passed. Early exits must use the explicit cancellation flow where configured, or the admin emergency path.
-- **Single-admin control.** Admin functions are controlled by one admin address at a time. The contract supports two-step admin transfer and renouncing admin rights, but it does not implement native multisig approval.
-- **Storage TTL requires operational monitoring for long locks.** Persistent entries are bumped during writes, but long-lived deployments should monitor TTL assumptions so maximum-duration locks remain recoverable.
-
----
-
-## Getting Started
-
-### Prerequisites
+### 📋 Prerequisites
 
 ```bash
 # Install Rust
@@ -330,7 +337,7 @@ cargo install --locked soroban-cli
 cargo install cargo-watch
 ```
 
-### Build
+### 🔨 Build
 
 ```bash
 make build
@@ -339,7 +346,7 @@ make build
 > **Why not just `cargo build`?**
 > Running `cargo build` without `--target wasm32-unknown-unknown` produces a native binary, not a WASM contract. The Makefile's `build` target always passes the correct flag. A `.cargo/config.toml` is included in the repo that documents this trade-off — the default target is intentionally left commented out because setting it would break `cargo test` (tests must run natively to use Soroban testutils).
 
-### Test
+### ✅ Test
 
 ```bash
 make test
@@ -347,13 +354,13 @@ make test
 
 > Tests run natively (no `--target` flag) so that `soroban-sdk`'s `testutils` feature works. Never run `cargo test --target wasm32-unknown-unknown`.
 
-### Full CI check (fmt + lint + test + audit + deny)
+### 🔍 Full CI check (fmt + lint + test + audit + deny)
 
 ```bash
 make check
 ```
 
-### Security audit
+### 🛡️ Security audit
 
 ```bash
 make audit
@@ -361,7 +368,7 @@ make audit
 
 Runs `cargo audit` to check all dependencies against the [RustSec Advisory Database](https://rustsec.org/).
 
-### License & dependency policy
+### 📦 License & dependency policy
 
 ```bash
 make deny
@@ -369,13 +376,13 @@ make deny
 
 Runs `cargo deny check` to enforce license allowlists and ban policies defined in `deny.toml`.
 
-### Optimize WASM
+### ⚡ Optimize WASM
 
 ```bash
 make optimize
 ```
 
-### Check WASM size
+### 📊 Check WASM size
 
 ```bash
 make check-wasm-size
@@ -391,14 +398,14 @@ make check-wasm-size MAX_WASM_BYTES=81920   # 80 KB
 The same threshold is enforced in CI via the `Check WASM size` step in `.github/workflows/ci.yml`.
 To update the limit, change `MAX_WASM_BYTES` in both places (or only in `ci.yml` if you don't use the Makefile target locally).
 
-### Deploy to Testnet
+### 🌐 Deploy to Testnet
 
 ```bash
 export SOROBAN_SECRET_KEY=S...
 make deploy-testnet
 ```
 
-### Release Deployment (CI)
+### 🎯 Release Deployment (CI)
 
 Pushing a version tag triggers the `deploy-testnet` CI job automatically:
 
@@ -409,7 +416,7 @@ git push origin v1.0.0
 
 The job requires the `SOROBAN_SECRET_KEY` secret to be set in the repository's **testnet** environment (`Settings → Environments → testnet → Secrets`). After the run, the deployed contract ID appears in the job's summary tab.
 
-### Smoke Test (local node)
+### 🧪 Smoke Test (local node)
 
 Runs a quick end-to-end test against a local Soroban standalone node — no funded account or testnet access required.
 
@@ -427,7 +434,7 @@ The script (`scripts/smoke_test_local.sh`):
 
 ---
 
-## Updating the Stellar CLI Version
+## 📝 Updating the Stellar CLI Version
 
 `STELLAR_CLI_VERSION` is defined as a top-level `env` variable in `.github/workflows/ci.yml`. Dependabot keeps GitHub Actions versions up to date automatically, but it does not track arbitrary binary downloads. When a new `stellar-cli` release is published at https://github.com/stellar/stellar-cli/releases, update the variable manually:
 
@@ -437,7 +444,7 @@ env:
   STELLAR_CLI_VERSION: "<new-version>"
 ```
 
-## Deployment Checklist
+## ✈️ Deployment Checklist
 
 Use this checklist when deploying to production.
 
@@ -448,7 +455,10 @@ Use this checklist when deploying to production.
 - [ ] Consider calling `renounce_admin` for fully trustless operation once setup is complete
 - [ ] Monitor storage TTL for long-duration vaults — entries are bumped on write but not on read
 - [ ] Confirm the optimized WASM size is within the Stellar network limit (`make check-wasm-size`)
-## Fee Estimation
+
+---
+
+## 💡 Fee Estimation
 
 Soroban charges fees for persistent storage operations. Here is what each call costs at a high level:
 
@@ -468,7 +478,7 @@ For current fee rates see the [Stellar fee documentation](https://developers.ste
 
 ---
 
-## Known Limitations
+## ⚠️ Known Limitations
 
 | Limitation | Detail |
 |---|---|
@@ -480,7 +490,7 @@ For current fee rates see the [Stellar fee documentation](https://developers.ste
 
 ---
 
-## Testing
+## 🧬 Testing
 
 ### Run all tests
 
