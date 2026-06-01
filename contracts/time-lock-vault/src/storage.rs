@@ -1,6 +1,6 @@
 use soroban_sdk::{Address, Env, Vec};
 
-use crate::types::{VaultEntry, VaultKey};
+use crate::types::{VaultEntry, VaultKey, LedgerVaultEntry};
 
 pub const BUMP_THRESHOLD: u32 = 518_400;
 pub const BUMP_TARGET: u32 = 33_000_000;
@@ -62,6 +62,28 @@ pub fn get_deposit_readonly(env: &Env, depositor: &Address, deposit_id: u32) -> 
 
 pub fn remove_deposit(env: &Env, depositor: &Address, deposit_id: u32) {
     let key = VaultKey::Deposit(depositor.clone(), deposit_id);
+    env.storage().persistent().remove(&key);
+}
+
+// ----------------------------------------------------------------
+//  Ledger-based deposit helpers
+// ----------------------------------------------------------------
+
+pub fn set_deposit_by_ledger(env: &Env, depositor: &Address, deposit_id: u32, entry: &LedgerVaultEntry) {
+    let key = VaultKey::DepositByLedger(depositor.clone(), deposit_id);
+    env.storage().persistent().set(&key, entry);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, BUMP_THRESHOLD, BUMP_TARGET);
+}
+
+pub fn get_deposit_by_ledger_readonly(env: &Env, depositor: &Address, deposit_id: u32) -> Option<LedgerVaultEntry> {
+    let key = VaultKey::DepositByLedger(depositor.clone(), deposit_id);
+    env.storage().persistent().get(&key)
+}
+
+pub fn remove_deposit_by_ledger(env: &Env, depositor: &Address, deposit_id: u32) {
+    let key = VaultKey::DepositByLedger(depositor.clone(), deposit_id);
     env.storage().persistent().remove(&key);
 }
 
