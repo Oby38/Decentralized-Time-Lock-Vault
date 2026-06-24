@@ -6,13 +6,14 @@ use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events, Ledger, LedgerInfo},
     token::{Client as TokenClient, StellarAssetClient},
-    Address, Env, IntoVal, Symbol,
+    Address, Env, IntoVal, Symbol, Val,
 };
 
 use crate::{
     contract::{TimeLockVault, TimeLockVaultClient},
+    constants::{MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS},
     errors::VaultError,
-    types::{VaultEntry, VaultKey, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS},
+    types::{VaultEntry, VaultKey},
 };
 
 fn setup() -> (
@@ -117,14 +118,10 @@ fn test_deposit_success() {
 
     let events = env.events().all();
     let last = events.last().unwrap();
-    assert_eq!(
-        last,
-        (
-            vault.address.clone(),
-            (symbol_short!("deposit"), alice.clone(), token.clone()).into_val(&env),
-            (id, 1_000_i128, unlock_time).into_val(&env),
-        )
-    );
+    assert_eq!(last.0, vault.address);
+    assert_eq!(last.1, (symbol_short!("deposit"), alice.clone(), token.clone()).into_val(&env));
+    let expected: Val = (id, 1_000_i128, unlock_time).into_val(&env);
+    assert_eq!(last.2.get_payload(), expected.get_payload());
 }
 
 #[test]
@@ -503,14 +500,10 @@ fn test_deposit_for_event_emitted() {
 
     let events = env.events().all();
     let last = events.last().unwrap();
-    assert_eq!(
-        last,
-        (
-            vault.address.clone(),
-            (symbol_short!("deposit"), bob.clone(), token.clone()).into_val(&env),
-            (0_u32, 1_000_i128, unlock_time).into_val(&env),
-        )
-    );
+    assert_eq!(last.0, vault.address);
+    assert_eq!(last.1, (symbol_short!("deposit"), bob.clone(), token.clone()).into_val(&env));
+    let expected: Val = (0_u32, 1_000_i128, unlock_time).into_val(&env);
+    assert_eq!(last.2.get_payload(), expected.get_payload());
 }
 
 // ================================================================
@@ -531,14 +524,10 @@ fn test_withdraw_after_unlock_succeeds() {
 
     let events = env.events().all();
     let last = events.last().unwrap();
-    assert_eq!(
-        last,
-        (
-            vault.address.clone(),
-            (symbol_short!("withdraw"), alice.clone(), token.clone()).into_val(&env),
-            (0_u32, 1_000_i128).into_val(&env),
-        )
-    );
+    assert_eq!(last.0, vault.address);
+    assert_eq!(last.1, (symbol_short!("withdraw"), alice.clone(), token.clone()).into_val(&env));
+    let expected: Val = (0_u32, 1_000_i128).into_val(&env);
+    assert_eq!(last.2.get_payload(), expected.get_payload());
 }
 
 #[test]
@@ -696,14 +685,10 @@ fn test_emergency_withdraw_by_admin_before_unlock_succeeds() {
     let events = env.events().all();
     let last = events.last().unwrap();
     // admin is in the data payload, not topics, to avoid leaking it publicly
-    assert_eq!(
-        last,
-        (
-            vault.address.clone(),
-            (Symbol::new(&env, "emrg_wdraw"), alice.clone()).into_val(&env),
-            (0_u32, admin.clone(), token.clone(), 2_000_i128).into_val(&env),
-        )
-    );
+    assert_eq!(last.0, vault.address);
+    assert_eq!(last.1, (Symbol::new(&env, "emrg_wdraw"), alice.clone()).into_val(&env));
+    let expected: Val = (0_u32, admin.clone(), token.clone(), 2_000_i128).into_val(&env);
+    assert_eq!(last.2.get_payload(), expected.get_payload());
 }
 
 #[test]
@@ -745,14 +730,10 @@ fn test_transfer_admin_two_step_succeeds() {
 
     let events = env.events().all();
     let last = events.last().unwrap();
-    assert_eq!(
-        last,
-        (
-            vault.address.clone(),
-            (Symbol::new(&env, "adm_xfr_done"), new_admin.clone()).into_val(&env),
-            ().into_val(&env),
-        )
-    );
+    assert_eq!(last.0, vault.address);
+    assert_eq!(last.1, (Symbol::new(&env, "adm_xfr_done"), new_admin.clone()).into_val(&env));
+    let expected: Val = ().into_val(&env);
+    assert_eq!(last.2.get_payload(), expected.get_payload());
 }
 
 #[test]
@@ -864,14 +845,9 @@ fn test_renounce_admin_removes_admin() {
 
     let events = env.events().all();
     let last = events.last().unwrap();
-    assert_eq!(
-        last,
-        (
-            vault.address.clone(),
-            (Symbol::new(&env, "adm_renounce"), admin.clone()).into_val(&env),
-            ().into_val(&env),
-        )
-    );
+    assert_eq!(last.0, vault.address);
+    assert_eq!(last.1, (Symbol::new(&env, "adm_renounce"), admin.clone()).into_val(&env));
+    { let e: Val = ().into_val(&env); assert_eq!(last.2.get_payload(), e.get_payload()); }
 }
 
 #[test]
@@ -968,7 +944,7 @@ fn test_time_remaining_is_readonly() {
 
 #[test]
 fn test_depositor_count_empty() {
-    let (_env, vault, _token, _admin, _alice) = setup();
+    let (_env, vault, _token, _admin, _alice, _fee) = setup();
     assert_eq!(vault.get_depositor_count(), 0);
 }
 
@@ -981,7 +957,7 @@ fn test_depositors_empty_returns_empty_vec() {
 
 #[test]
 fn test_depositor_count_single_entry() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     assert_eq!(vault.get_depositor_count(), 1);
@@ -1000,7 +976,7 @@ fn test_depositors_single_entry() {
 
 #[test]
 fn test_depositor_count_multiple_entries() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let bob: Address = Address::generate(&env);
     let carol: Address = Address::generate(&env);
 
@@ -1037,7 +1013,7 @@ fn test_depositors_multiple_entries_full_page() {
 
 #[test]
 fn test_depositor_removed_on_withdraw() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     assert_eq!(vault.get_depositor_count(), 1);
@@ -1052,7 +1028,7 @@ fn test_depositor_removed_on_withdraw() {
 
 #[test]
 fn test_depositor_removed_on_emergency_withdraw() {
-    let (env, vault, token, admin, alice) = setup();
+    let (env, vault, token, admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 86400;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     assert_eq!(vault.get_depositor_count(), 1);
@@ -1086,7 +1062,7 @@ fn test_depositor_list_consistent_after_partial_removal() {
 
 #[test]
 fn test_pagination_offset_and_limit() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let bob: Address = Address::generate(&env);
     let carol: Address = Address::generate(&env);
 
@@ -1153,7 +1129,7 @@ fn test_redeposit_after_withdraw_adds_back_to_list() {
 fn setup_with_limits(
     max_deposit: Option<i128>,
     max_lock_secs: Option<u64>,
-) -> (Env, TimeLockVaultClient<'static>, Address, Address, Address) {
+) -> (Env, TimeLockVaultClient<'static>, Address, Address, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -1171,12 +1147,12 @@ fn setup_with_limits(
 
     vault.initialize(&admin, &fee, &max_deposit, &max_lock_secs);
 
-    (env, vault, token_address, admin, alice)
+    (env, vault, token_address, admin, alice, fee)
 }
 
 #[test]
 fn test_get_constants_returns_custom_limits() {
-    let (_env, vault, _token, _admin, _alice) = setup_with_limits(Some(5_000), Some(7200));
+    let (_env, vault, _token, _admin, _alice, _fee) = setup_with_limits(Some(5_000), Some(7200));
     let (max_amount, max_duration) = vault.get_constants();
     assert_eq!(max_amount, 5_000);
     assert_eq!(max_duration, 7200);
@@ -1184,7 +1160,7 @@ fn test_get_constants_returns_custom_limits() {
 
 #[test]
 fn test_custom_max_deposit_enforced() {
-    let (env, vault, token, _admin, alice) = setup_with_limits(Some(500), None);
+    let (env, vault, token, _admin, alice, _fee) = setup_with_limits(Some(500), None);
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &500, &unlock_time, &0);
     advance_time(&env, 3601);
@@ -1195,7 +1171,7 @@ fn test_custom_max_deposit_enforced() {
 
 #[test]
 fn test_custom_max_lock_secs_enforced() {
-    let (env, vault, token, _admin, alice) = setup_with_limits(None, Some(3600));
+    let (env, vault, token, _admin, alice, _fee) = setup_with_limits(None, Some(3600));
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &100, &unlock_time, &0);
     advance_time(&env, 3601);
@@ -1206,7 +1182,7 @@ fn test_custom_max_lock_secs_enforced() {
 
 #[test]
 fn test_default_fallback_when_no_custom_limits() {
-    let (env, vault, token, _admin, alice) = setup_with_limits(None, None);
+    let (env, vault, token, _admin, alice, _fee) = setup_with_limits(None, None);
     let unlock_time = env.ledger().timestamp() + 3600;
     let result = vault.try_deposit(&alice, &token, &(MAX_DEPOSIT_AMOUNT + 1), &unlock_time, &0);
     assert_eq!(result, Err(Ok(VaultError::AmountTooLarge)));
@@ -1323,7 +1299,7 @@ fn test_vault_key_pending_admin_xdr_snapshot() {
 
 #[test]
 fn test_auth_deposit_requires_depositor() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     assert_eq!(env.auths()[0].0, alice);
@@ -1341,7 +1317,7 @@ fn test_auth_deposit_for_requires_payer() {
 
 #[test]
 fn test_auth_withdraw_requires_depositor() {
-    let (env, vault, token, _admin, alice) = setup();
+    let (env, vault, token, _admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     advance_time(&env, 3601);
@@ -1351,7 +1327,7 @@ fn test_auth_withdraw_requires_depositor() {
 
 #[test]
 fn test_auth_emergency_withdraw_requires_admin() {
-    let (env, vault, token, admin, alice) = setup();
+    let (env, vault, token, admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 86400;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     vault.emergency_withdraw(&admin, &alice, &0);
@@ -1445,3 +1421,5 @@ fn test_full_lifecycle_deposit_withdraw_redeposit() {
     assert!(vault.get_vault(&alice, &new_id).is_some());
     assert_eq!(vault.get_vault(&alice, &new_id).unwrap().amount, 500);
 }
+// Add to test.rs temporarily
+#[test]

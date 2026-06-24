@@ -1,6 +1,8 @@
 use soroban_sdk::{Address, Env, Vec};
 
-use crate::types::{VaultEntry, VaultKey, LedgerVaultEntry, MAX_LOCK_DURATION_SECS};
+use crate::constants::MAX_LOCK_DURATION_SECS;
+use crate::errors::VaultError;
+use crate::types::{LedgerVaultEntry, VaultEntry, VaultKey};
 
 // Number of seconds per ledger — Soroban ledgers are ~5 seconds apart.
 pub const LEDGER_SECONDS: u64 = 5;
@@ -30,6 +32,33 @@ pub fn get_deposit_ids(env: &Env, depositor: &Address) -> Vec<u32> {
     for id in 0..count {
         let key = VaultKey::Deposit(depositor.clone(), id);
         if env.storage().persistent().has(&key) {
+            ids.push_back(id);
+        }
+    }
+    ids
+}
+
+pub fn get_deposit_by_ledger_ids(env: &Env, depositor: &Address) -> Vec<u32> {
+    let counter_key = VaultKey::DepositCounter(depositor.clone());
+    let count: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
+    let mut ids = Vec::new(env);
+    for id in 0..count {
+        let key = VaultKey::DepositByLedger(depositor.clone(), id);
+        if env.storage().persistent().has(&key) {
+            ids.push_back(id);
+        }
+    }
+    ids
+}
+
+pub fn get_all_deposit_ids(env: &Env, depositor: &Address) -> Vec<u32> {
+    let counter_key = VaultKey::DepositCounter(depositor.clone());
+    let count: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
+    let mut ids = Vec::new(env);
+    for id in 0..count {
+        let key_ts = VaultKey::Deposit(depositor.clone(), id);
+        let key_ledger = VaultKey::DepositByLedger(depositor.clone(), id);
+        if env.storage().persistent().has(&key_ts) || env.storage().persistent().has(&key_ledger) {
             ids.push_back(id);
         }
     }
@@ -104,6 +133,13 @@ pub fn set_admin(env: &Env, admin: &Address) {
 
 pub fn get_admin(env: &Env) -> Option<Address> {
     env.storage().persistent().get(&VaultKey::Admin)
+}
+
+pub fn require_admin(env: &Env, caller: &Address) -> Result<(), VaultError> {
+    match get_admin(env) {
+        Some(ref admin) if admin == caller => Ok(()),
+        _ => Err(VaultError::Unauthorized),
+    }
 }
 
 pub fn remove_admin(env: &Env) {

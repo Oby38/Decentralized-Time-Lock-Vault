@@ -1,10 +1,5 @@
 use soroban_sdk::{contracttype, Address};
 
-pub const MAX_DEPOSIT_AMOUNT: i128 = 1_000_000_000_000_000;
-pub const MAX_LOCK_DURATION_SECS: u64 = 157_788_000;
-pub const MIN_LOCK_DURATION_SECS: u64 = 60;
-pub const MAX_BATCH_SIZE: u32 = 20;
-
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum VaultKey {
@@ -39,4 +34,29 @@ pub struct LedgerVaultEntry {
     pub unlock_ledger: u32,
     pub depositor: Address,
     pub penalty_bps: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawResult {
+    pub depositor: Address,
+    pub success: bool,
+    pub amount: i128,
+    pub token: Address,
+    pub deposit_id: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchWithdrawRequest {
+    pub depositor: Address,
+    pub deposit_id: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VaultInfo {
+    pub depositor: Address,
+    pub deposit_id: u32,
+    pub entry: VaultEntry,
 }
