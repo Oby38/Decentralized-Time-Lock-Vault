@@ -1,6 +1,7 @@
 use soroban_sdk::{Address, Env, Vec};
 
-use crate::types::{VaultEntry, VaultKey, LedgerVaultEntry, MAX_LOCK_DURATION_SECS};
+use crate::constants::MAX_LOCK_DURATION_SECS;
+use crate::types::{LedgerVaultEntry, VaultEntry, VaultKey};
 
 // Number of seconds per ledger — Soroban ledgers are ~5 seconds apart.
 pub const LEDGER_SECONDS: u64 = 5;
@@ -34,6 +35,18 @@ pub fn get_deposit_ids(env: &Env, depositor: &Address) -> Vec<u32> {
         }
     }
     ids
+}
+
+pub fn has_any_deposit(env: &Env, depositor: &Address) -> bool {
+    let counter_key = VaultKey::DepositCounter(depositor.clone());
+    let count: u32 = env.storage().persistent().get(&counter_key).unwrap_or(0);
+    for id in 0..count {
+        let key = VaultKey::Deposit(depositor.clone(), id);
+        if env.storage().persistent().has(&key) {
+            return true;
+        }
+    }
+    false
 }
 
 // ----------------------------------------------------------------
@@ -104,6 +117,14 @@ pub fn set_admin(env: &Env, admin: &Address) {
 
 pub fn get_admin(env: &Env) -> Option<Address> {
     env.storage().persistent().get(&VaultKey::Admin)
+}
+
+pub fn require_admin(env: &Env, admin: &Address) -> Result<(), crate::errors::VaultError> {
+    let stored = get_admin(env).ok_or(crate::errors::VaultError::Unauthorized)?;
+    if *admin != stored {
+        return Err(crate::errors::VaultError::Unauthorized);
+    }
+    Ok(())
 }
 
 pub fn remove_admin(env: &Env) {

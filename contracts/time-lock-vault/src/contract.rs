@@ -9,7 +9,7 @@ use crate::{
     constants::{MAX_BATCH_SIZE, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS, MIN_LOCK_DURATION_SECS},
     errors::VaultError,
     events, storage,
-    types::{VaultEntry, LedgerVaultEntry, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS, MIN_LOCK_DURATION_SECS, MAX_BATCH_SIZE},
+    types::{LedgerVaultEntry, VaultEntry},
 };
 
 #[contract]
@@ -250,7 +250,7 @@ impl TimeLockVault {
         }
 
         storage::remove_deposit(&env, &depositor, deposit_id);
-        if storage::get_deposit_ids(&env, &depositor).len() == 0 {
+        if !storage::has_any_deposit(&env, &depositor) {
             storage::remove_depositor(&env, &depositor);
         }
 
@@ -288,7 +288,7 @@ impl TimeLockVault {
             }
 
             storage::remove_deposit(&env, &depositor, deposit_id);
-            if storage::get_deposit_ids(&env, &depositor).len() == 0 {
+            if !storage::has_any_deposit(&env, &depositor) {
                 storage::remove_depositor(&env, &depositor);
             }
 
@@ -307,7 +307,7 @@ impl TimeLockVault {
             }
 
             storage::remove_deposit_by_ledger(&env, &depositor, deposit_id);
-            if storage::get_deposit_ids(&env, &depositor).len() == 0 {
+            if !storage::has_any_deposit(&env, &depositor) {
                 storage::remove_depositor(&env, &depositor);
             }
 
@@ -338,14 +338,14 @@ impl TimeLockVault {
         }
 
         storage::remove_deposit(&env, &depositor, deposit_id);
-        if storage::get_deposit_ids(&env, &depositor).len() == 0 {
+        if !storage::has_any_deposit(&env, &depositor) {
             storage::remove_depositor(&env, &depositor);
         }
 
         let token_client = token::Client::new(&env, &entry.token);
         token_client.transfer(&env.current_contract_address(), &recipient, &entry.amount);
 
-        events::withdraw_to(&env, &depositor, &recipient, &entry.token, entry.amount);
+        events::withdraw_to(&env, &depositor, &recipient, &entry.token, deposit_id, entry.amount);
         Ok(())
     }
 
@@ -366,7 +366,7 @@ impl TimeLockVault {
             .ok_or(VaultError::NoDepositFound)?;
 
         storage::remove_deposit(&env, &depositor, deposit_id);
-        if storage::get_deposit_ids(&env, &depositor).len() == 0 {
+        if !storage::has_any_deposit(&env, &depositor) {
             storage::remove_depositor(&env, &depositor);
         }
 

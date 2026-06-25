@@ -116,6 +116,19 @@ jobs:
         run: cargo test --doc --features testutils
 
   # ----------------------------------------------------------------
+  #  Shell syntax validation
+  # ----------------------------------------------------------------
+  shellcheck:
+    name: Shell Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Check deploy_testnet.sh
+        run: shellcheck scripts/deploy_testnet.sh
+
+  # ----------------------------------------------------------------
   #  Unsafe Code Scanner (cargo-geiger)
   # ----------------------------------------------------------------
   geiger:
