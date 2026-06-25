@@ -17,28 +17,20 @@ pub fn emergency_withdraw(
     token: &Address,
     amount: i128,
 ) {
-    let topics = (
-        Symbol::new(env, "emrg_wdraw"),
-        admin.clone(),
-        depositor.clone(),
-    );
-    env.events().publish(topics, (token.clone(), amount));
-}
-
-/// Emitted once per successfully processed depositor inside `batch_emergency_withdraw`.
-/// Same shape as `emergency_withdraw` so event consumers need no special handling.
-pub fn batch_emergency_withdraw_item(
-    env: &Env,
-    admin: &Address,
-    depositor: &Address,
-    token: &Address,
-    amount: i128,
-) {
-    emergency_withdraw(env, admin, depositor, token, amount);
+    // admin is placed in the data payload rather than topics to avoid
+    // leaking the admin address in the publicly-indexed event topic stream.
+    let topics = (Symbol::new(env, "emrg_wdraw"), depositor.clone());
+    env.events()
+        .publish(topics, (admin.clone(), token.clone(), amount));
 }
 
 pub fn admin_transfer_initiated(env: &Env, current_admin: &Address, pending_admin: &Address) {
     let topics = (Symbol::new(env, "adm_xfr_init"), current_admin.clone());
+    env.events().publish(topics, pending_admin.clone());
+}
+
+pub fn admin_transfer_cancelled(env: &Env, current_admin: &Address, pending_admin: &Address) {
+    let topics = (Symbol::new(env, "adm_xfr_cancel"), current_admin.clone());
     env.events().publish(topics, pending_admin.clone());
 }
 
@@ -47,14 +39,19 @@ pub fn admin_transfer_accepted(env: &Env, new_admin: &Address) {
     env.events().publish(topics, ());
 }
 
-pub fn admin_transfer_cancelled(env: &Env, admin: &Address) {
-    let topics = (Symbol::new(env, "adm_xfr_cancel"), admin.clone());
-    env.events().publish(topics, ());
-}
-
 pub fn admin_renounced(env: &Env, former_admin: &Address) {
     let topics = (Symbol::new(env, "adm_renounce"), former_admin.clone());
     env.events().publish(topics, ());
+}
+
+pub fn lock_extended(
+    env: &Env,
+    depositor: &Address,
+    old_unlock_time: u64,
+    new_unlock_time: u64,
+) {
+    let topics = (Symbol::new(env, "lock_extended"), depositor.clone());
+    env.events().publish(topics, (old_unlock_time, new_unlock_time));
 }
 
 pub fn deposit_cancelled(
@@ -64,6 +61,10 @@ pub fn deposit_cancelled(
     amount: i128,
     penalty: i128,
 ) {
-    let topics = (Symbol::new(env, "dep_cancel"), depositor.clone(), token.clone());
+    let topics = (
+        Symbol::new(env, "dep_cancel"),
+        depositor.clone(),
+        token.clone(),
+    );
     env.events().publish(topics, (amount, penalty));
 }

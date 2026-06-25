@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    tags: ["v*"]
   pull_request:
     branches: [main, develop]
 
@@ -13,22 +14,60 @@ env:
 
 jobs:
   # ----------------------------------------------------------------
+  #  Security Audit
+  # ----------------------------------------------------------------
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ----------------------------------------------------------------
+  #  PR Title Lint
+  # ----------------------------------------------------------------
+  pr-title-lint:
+    name: PR Title Lint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint PR title
+        run: |
+          echo "PR title: ${{ github.event.pull_request.title }}"
+          if ! echo "${{ github.event.pull_request.title }}" | grep -Eq '^(feat|fix|test|docs|ci|chore|refactor|security|perf)(\(.+\))?: .+'; then
+            echo "ERROR: PR title must follow conventional commits."
+            echo "Expected pattern: ^(feat|fix|test|docs|ci|chore|refactor|security|perf)(\(.+\))?: .+"
+            exit 1
+          fi
+
+  # ----------------------------------------------------------------
   #  Lint
   # ----------------------------------------------------------------
   lint:
     name: Lint (fmt + clippy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
         with:
-          targets: wasm32-unknown-unknown
           components: rustfmt, clippy
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/registry
@@ -53,7 +92,7 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -61,7 +100,7 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/registry
@@ -73,15 +112,17 @@ jobs:
       - name: Run tests
         run: cargo test --features testutils
 
+      - name: Run doc tests
+        run: cargo test --doc --features testutils
+
   # ----------------------------------------------------------------
-  #  Build WASM
+  #  Unsafe Code Scanner (cargo-geiger)
   # ----------------------------------------------------------------
-  build:
-    name: Build WASM
+  geiger:
+    name: Unsafe Code Scanner (cargo-geiger)
     runs-on: ubuntu-latest
-    needs: [lint, test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -89,21 +130,69 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: ${{ runner.os }}-cargo-wasm-
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install cargo-geiger
+        run: cargo install cargo-geiger
+
+      - name: Scan for unsafe code
+        run: cargo geiger --all-features
+
+  # ----------------------------------------------------------------
+  #  License & dependency policy
+  # ----------------------------------------------------------------
+  deny:
+    name: License & Bans (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # ----------------------------------------------------------------
+  #  Build WASM
+  # ----------------------------------------------------------------
+  build:
+    name: Build WASM (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    needs: [lint, test, deny]
+    strategy:
+      matrix:
+        toolchain: [stable, '1.81']  # MSRV
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Rust ${{ matrix.toolchain }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-wasm-${{ matrix.toolchain }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-${{ matrix.toolchain }}-
+
+      - name: Check WASM target
+        run: cargo check --target wasm32-unknown-unknown
 
       - name: Build release WASM
         run: cargo build --target wasm32-unknown-unknown --release
 
       - name: Cache stellar-cli
         id: cache-stellar
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: /usr/local/bin/stellar
           key: stellar-cli-${{ env.STELLAR_CLI_VERSION }}
@@ -119,6 +208,21 @@ jobs:
           stellar contract optimize \
             --wasm target/wasm32-unknown-unknown/release/time_lock_vault.wasm \
             --wasm-out target/time_lock_vault.optimized.wasm
+
+      - name: Check WASM size regression
+        env:
+          MAX_WASM_BYTES: 51200  # 50 KB threshold
+        run: |
+          ACTUAL=$(wc -c < target/time_lock_vault.optimized.wasm)
+          echo "Optimized WASM size: ${ACTUAL} bytes (threshold: ${MAX_WASM_BYTES} bytes)"
+          if [ "$ACTUAL" -gt "$MAX_WASM_BYTES" ]; then
+            echo "❌ ERROR: WASM size regression detected!"
+            echo "WASM is too large: ${ACTUAL} bytes exceeds threshold of ${MAX_WASM_BYTES} bytes (50 KB)"
+            echo "This will increase deployment costs on Stellar."
+            exit 1
+          else
+            echo "✅ WASM size check passed: ${ACTUAL} bytes is within the ${MAX_WASM_BYTES} byte limit"
+          fi
 
       - name: Check WASM size
         env:
@@ -136,8 +240,71 @@ jobs:
           fi
 
       - name: Upload optimized WASM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: time-lock-vault-wasm
           path: target/time_lock_vault.optimized.wasm
           retention-days: 30
+
+  # ----------------------------------------------------------------
+  #  Deploy to Testnet (version tags only)
+  # ----------------------------------------------------------------
+  deploy-testnet:
+    name: Deploy to Testnet
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: testnet
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wasm-
+
+      - name: Cache stellar-cli
+        id: cache-stellar
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/stellar
+          key: stellar-cli-${{ env.STELLAR_CLI_VERSION }}
+
+      - name: Install stellar-cli
+        if: steps.cache-stellar.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL "https://github.com/stellar/stellar-cli/releases/download/v${{ env.STELLAR_CLI_VERSION }}/stellar-cli-v${{ env.STELLAR_CLI_VERSION }}-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C /usr/local/bin stellar
+
+      - name: Deploy to testnet
+        env:
+          SOROBAN_SECRET_KEY: ${{ secrets.SOROBAN_SECRET_KEY }}
+        run: bash scripts/deploy_testnet.sh
+
+      - name: Post contract ID to job summary
+        run: |
+          CONTRACT_ID=$(grep "^Contract ID:" deploy_testnet.log | cut -d' ' -f3)
+          echo "## Testnet Deployment — ${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Contract ID | \`${CONTRACT_ID}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Network | testnet |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tag | ${{ github.ref_name }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload deploy log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-log
+          path: deploy_testnet.log

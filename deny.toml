@@ -1,0 +1,88 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+targets = []
+
+# ---------------------------------------------------------------------------
+# Licenses
+# ---------------------------------------------------------------------------
+[licenses]
+version = 2
+
+# Licenses that are explicitly permitted.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+]
+
+# Licenses that are explicitly denied.
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-1.0",
+    "AGPL-3.0",
+]
+
+# Confidence threshold for license text detection (0.0 – 1.0).
+confidence-threshold = 0.8
+
+# ---------------------------------------------------------------------------
+# Bans (duplicate crates / blocked crates)
+# ---------------------------------------------------------------------------
+[bans]
+# Deny multiple versions of the same crate by default …
+multiple-versions = "deny"
+
+# … except for the crates listed below that are known acceptable duplicates
+# pulled in transitively by the Soroban SDK ecosystem.
+skip = [
+    # base64 0.13 (via crate-git-revision) vs 0.22 (via serde_with)
+    { name = "base64" },
+
+    # darling 0.20 (via soroban-sdk macros) vs 0.23 (via serde_with_macros)
+    { name = "darling" },
+    { name = "darling_core" },
+    { name = "darling_macro" },
+
+    # hashbrown 0.12 / 0.13 / 0.17 pulled by different versions of indexmap
+    { name = "hashbrown" },
+
+    # indexmap 1.x (via serde_with) vs 2.x (via soroban-sdk)
+    { name = "indexmap" },
+
+    # schemars 0.9 (via serde_with) vs 1.x (via soroban-sdk)
+    { name = "schemars" },
+
+    # syn 1.x (legacy proc-macro crates) vs 2.x (modern proc-macro crates)
+    { name = "syn" },
+]
+
+# Critical first-party / core crates where duplicate versions must never slip in.
+deny = [
+    { name = "soroban-sdk" },
+    { name = "soroban-env-host" },
+    { name = "soroban-env-common" },
+]
+
+# ---------------------------------------------------------------------------
+# Advisories (security vulnerabilities)
+# ---------------------------------------------------------------------------
+[advisories]
+version = 2
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+ignore = []
+
+# ---------------------------------------------------------------------------
+# Sources
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
