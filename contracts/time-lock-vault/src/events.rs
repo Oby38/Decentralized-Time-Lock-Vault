@@ -18,8 +18,6 @@ pub fn emergency_withdraw(
     deposit_id: u32,
     amount: i128,
 ) {
-    // admin is placed in the data payload rather than topics to avoid
-    // leaking the admin address in the publicly-indexed event topic stream.
     let topics = (Symbol::new(env, "emrg_wdraw"), depositor.clone());
     env.events()
         .publish(topics, (deposit_id, admin.clone(), token.clone(), amount));
@@ -56,12 +54,12 @@ pub fn lock_extended(
 }
 
 pub fn paused(env: &Env, admin: &Address) {
-    let topics = (Symbol::new(env, "paused"), admin.clone());
+    let topics = (symbol_short!("paused"), admin.clone());
     env.events().publish(topics, ());
 }
 
 pub fn unpaused(env: &Env, admin: &Address) {
-    let topics = (Symbol::new(env, "unpaused"), admin.clone());
+    let topics = (symbol_short!("unpaused"), admin.clone());
     env.events().publish(topics, ());
 }
 
