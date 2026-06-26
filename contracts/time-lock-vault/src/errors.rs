@@ -16,4 +16,10 @@ pub enum VaultError {
     InvalidAdmin = 10,
     LockDurationTooShort = 11,
     ContractPaused = 12,
+    /// Returned by `cancel_deposit` when the vault is already past its unlock
+    /// time — the caller should use `withdraw` instead.
+    FundsAlreadyUnlocked = 13,
+    /// Returned by `batch_emergency_withdraw` when `depositors.len()` exceeds
+    /// `MAX_BATCH_SIZE`.
+    BatchTooLarge = 14,
 }
