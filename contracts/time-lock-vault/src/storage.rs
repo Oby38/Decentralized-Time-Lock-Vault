@@ -17,10 +17,9 @@ pub const BUMP_TARGET: u32 = ((MAX_LOCK_DURATION_SECS + LEDGER_SECONDS - 1) / LE
 pub fn next_deposit_id(env: &Env, depositor: &Address) -> u32 {
     let key = VaultKey::DepositCounter(depositor.clone());
     let id: u32 = env.storage().persistent().get(&key).unwrap_or(0);
-    env.storage().persistent().set(&key, &(id + 1));
-    env.storage()
-        .persistent()
-        .extend_ttl(&key, BUMP_THRESHOLD, BUMP_TARGET);
+    let next = id + 1;
+    env.storage().persistent().set(&key, &next);
+    extend_ttl(env, &key);
     id
 }
 
@@ -112,9 +111,7 @@ pub fn get_deposit(env: &Env, depositor: &Address, deposit_id: u32) -> Option<Va
     let key = VaultKey::Deposit(depositor.clone(), deposit_id);
     let entry: Option<VaultEntry> = env.storage().persistent().get(&key);
     if entry.is_some() {
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, BUMP_THRESHOLD, BUMP_TARGET);
+        extend_ttl(env, &key);
     }
     entry
 }
@@ -160,9 +157,7 @@ pub fn remove_deposit_by_ledger(env: &Env, depositor: &Address, deposit_id: u32)
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().persistent().set(&VaultKey::Admin, admin);
-    env.storage()
-        .persistent()
-        .extend_ttl(&VaultKey::Admin, BUMP_THRESHOLD, BUMP_TARGET);
+    extend_ttl(env, &VaultKey::Admin);
 }
 
 pub fn get_admin(env: &Env) -> Option<Address> {
@@ -190,12 +185,8 @@ pub fn require_admin(env: &Env, caller: &Address) -> Result<(), VaultError> {
 }
 
 pub fn set_pending_admin(env: &Env, pending: &Address) {
-    env.storage()
-        .persistent()
-        .set(&VaultKey::PendingAdmin, pending);
-    env.storage()
-        .persistent()
-        .extend_ttl(&VaultKey::PendingAdmin, BUMP_THRESHOLD, BUMP_TARGET);
+    env.storage().persistent().set(&VaultKey::PendingAdmin, pending);
+    extend_ttl(env, &VaultKey::PendingAdmin);
 }
 
 pub fn get_pending_admin(env: &Env) -> Option<Address> {
@@ -211,12 +202,8 @@ pub fn remove_pending_admin(env: &Env) {
 // ----------------------------------------------------------------
 
 pub fn set_initialized(env: &Env) {
-    env.storage()
-        .persistent()
-        .set(&VaultKey::Initialized, &true);
-    env.storage()
-        .persistent()
-        .extend_ttl(&VaultKey::Initialized, BUMP_THRESHOLD, BUMP_TARGET);
+    env.storage().persistent().set(&VaultKey::Initialized, &true);
+    extend_ttl(env, &VaultKey::Initialized);
 }
 
 pub fn is_initialized(env: &Env) -> bool {
@@ -259,12 +246,8 @@ pub fn get_max_lock_secs(env: &Env) -> Option<u64> {
 
 /// Persists the `fee_recipient` address and bumps TTL. Called once during `initialize`.
 pub fn set_fee_recipient(env: &Env, recipient: &Address) {
-    env.storage()
-        .persistent()
-        .set(&VaultKey::FeeRecipient, recipient);
-    env.storage()
-        .persistent()
-        .extend_ttl(&VaultKey::FeeRecipient, BUMP_THRESHOLD, BUMP_TARGET);
+    env.storage().persistent().set(&VaultKey::FeeRecipient, recipient);
+    extend_ttl(env, &VaultKey::FeeRecipient);
 }
 
 pub fn get_fee_recipient(env: &Env) -> Option<Address> {

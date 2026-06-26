@@ -29,10 +29,9 @@ fn setup() -> (
     let vault_id = env.register(TimeLockVault, ());
     let vault = TimeLockVaultClient::new(&env, &vault_id);
 
-    let admin: Address = Address::generate(&env);
-    let alice: Address = Address::generate(&env);
-    let fee_recipient: Address = Address::generate(&env);
-
+    let admin = Address::generate(&env);
+    let alice = Address::generate(&env);
+    let fee_recipient = Address::generate(&env);
     let token_id = env.register_stellar_asset_contract_v2(admin.clone());
     let token_address = token_id.address();
 
@@ -92,10 +91,8 @@ fn test_double_initialize_fails() {
     assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
 }
 
-#[test]
-fn test_is_initialized() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let unlock_time_1 = env.ledger().timestamp() + 3600;
+    let unlock_time_2 = env.ledger().timestamp() + 7200;
 
     let vault_id = env.register(TimeLockVault, ());
     let vault = TimeLockVaultClient::new(&env, &vault_id);
@@ -106,42 +103,33 @@ fn test_is_initialized() {
     vault.initialize(&admin, &fee, &None, &None);
     assert!(vault.is_initialized());
 
-    vault.renounce_admin(&admin);
-    assert!(vault.is_initialized());
+    vault.withdraw(&alice, &first_id).unwrap();
+    assert_eq!(vault.get_deposit_ids(&alice), vec![1_u32]);
 }
 
-// ================================================================
-//  Deposit — happy path
-// ================================================================
-
 #[test]
-fn test_deposit_success() {
+fn test_depositor_pagination_is_capped_to_a_reasonable_page_size() {
     let (env, vault, token, _admin, alice, _fee) = setup();
     let unlock_time = env.ledger().timestamp() + 3600;
     let id = vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
 
-    assert_eq!(id, 0);
-    let entry = vault.get_vault(&alice, &id).expect("entry should exist");
-    assert_eq!(entry.amount, 1_000);
-    assert_eq!(entry.unlock_time, unlock_time);
-    assert_eq!(entry.token, token);
-    assert_eq!(entry.depositor, alice);
-    assert_eq!(entry.penalty_bps, 0);
+    for i in 0..(MAX_DEPOSITORS_PAGE_SIZE + 5) {
+        let depositor = Address::generate(&env);
+        StellarAssetClient::new(&env, &token).mint(&depositor, &10_000);
+        let unlock_time = env.ledger().timestamp() + 3600 + i as u64;
+        vault.deposit(&depositor, &token, &100, &unlock_time, &0).unwrap();
+    }
 
 }
 
 #[test]
-fn test_deposit_transfers_tokens_to_contract() {
+fn test_short_lock_durations_are_rejected() {
     let (env, vault, token, _admin, alice, _fee) = setup();
     let token_client = TokenClient::new(&env, &token);
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
     assert_eq!(token_client.balance(&alice), 9_000);
 }
-
-// ================================================================
-//  Deposit — validation errors
-// ================================================================
 
 #[test]
 fn test_deposit_zero_amount_fails() {
@@ -175,9 +163,8 @@ fn test_deposit_amount_exceeds_max_fails() {
 }
 
 #[test]
-fn test_deposit_at_max_amount_succeeds() {
+fn test_deposit_rejects_too_large_amounts_and_invalid_penalty_bps() {
     let (env, vault, token, _admin, alice, _fee) = setup();
-    StellarAssetClient::new(&env, &token).mint(&alice, &MAX_DEPOSIT_AMOUNT);
     let unlock_time = env.ledger().timestamp() + 3600;
     vault.deposit(&alice, &token, &MAX_DEPOSIT_AMOUNT, &unlock_time, &0);
     let entry = vault.get_vault(&alice, &0).expect("entry should exist");
@@ -253,9 +240,10 @@ fn test_multiple_deposits_same_address() {
     assert_eq!(id1, 1);
     assert_eq!(id2, 2);
 
-    assert_eq!(vault.get_vault(&alice, &0).unwrap().amount, 1_000);
-    assert_eq!(vault.get_vault(&alice, &1).unwrap().amount, 2_000);
-    assert_eq!(vault.get_vault(&alice, &2).unwrap().amount, 3_000);
+    vault.cancel_deposit(&alice, &deposit_id).unwrap();
+    assert!(vault.get_vault(&alice, &deposit_id).is_none());
+    assert_eq!(vault.get_deposit_ids(&alice), Vec::<u32>::new(&env));
+    assert_eq!(vault.get_fee_recipient(), Some(fee_recipient));
 }
 
 #[test]

@@ -292,10 +292,6 @@ impl TimeLockVault {
         Ok(())
     }
 
-    // ----------------------------------------------------------------
-    //  Core: Withdraw
-    // ----------------------------------------------------------------
-
     pub fn withdraw(env: Env, depositor: Address, deposit_id: u32) -> Result<(), VaultError> {
         depositor.require_auth();
 
@@ -375,10 +371,6 @@ impl TimeLockVault {
         events::withdraw_to(&env, &depositor, &recipient, &entry.token, deposit_id, entry.amount);
         Ok(())
     }
-
-    // ----------------------------------------------------------------
-    //  Admin: Emergency Withdrawal
-    // ----------------------------------------------------------------
 
     pub fn emergency_withdraw(
         env: Env,
@@ -623,10 +615,7 @@ impl TimeLockVault {
     pub fn time_remaining(env: Env, depositor: Address, deposit_id: u32) -> u64 {
         match storage::get_deposit_readonly(&env, &depositor, deposit_id) {
             None => 0,
-            Some(entry) => {
-                let now = env.ledger().timestamp();
-                entry.unlock_time.saturating_sub(now)
-            }
+            Some(entry) => entry.unlock_time.saturating_sub(env.ledger().timestamp()),
         }
     }
 
