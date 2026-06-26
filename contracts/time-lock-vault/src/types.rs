@@ -6,6 +6,7 @@ pub enum VaultKey {
     Deposit(Address, u32),
     DepositByLedger(Address, u32),
     DepositCounter(Address),
+    ActiveDepositCount(Address),
     Admin,
     PendingAdmin,
     Initialized,

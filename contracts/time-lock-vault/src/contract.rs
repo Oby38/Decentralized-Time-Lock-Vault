@@ -196,6 +196,10 @@ impl TimeLockVault {
     ) -> Result<u32, VaultError> {
         depositor.require_auth();
 
+        if storage::is_paused(&env) {
+            return Err(VaultError::ContractPaused);
+        }
+
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
@@ -212,6 +216,17 @@ impl TimeLockVault {
         let current_ledger = env.ledger().sequence();
         if unlock_ledger <= current_ledger {
             return Err(VaultError::UnlockTimeNotInFuture);
+        }
+
+        let lock_ledgers = unlock_ledger - current_ledger;
+        let max_lock = storage::get_max_lock_secs(&env).unwrap_or(MAX_LOCK_DURATION_SECS);
+        let max_lock_ledgers = (max_lock / storage::LEDGER_SECONDS) as u32;
+        if lock_ledgers > max_lock_ledgers {
+            return Err(VaultError::LockDurationTooLong);
+        }
+        let min_lock_ledgers = (MIN_LOCK_DURATION_SECS / storage::LEDGER_SECONDS) as u32;
+        if lock_ledgers < min_lock_ledgers {
+            return Err(VaultError::LockDurationTooShort);
         }
 
         let deposit_id = storage::next_deposit_id(&env, &depositor);
@@ -479,6 +494,25 @@ impl TimeLockVault {
     /// No auth required — this is a public read-only query (closes #81)
     pub fn get_vault(env: Env, depositor: Address, deposit_id: u32) -> Option<VaultEntry> {
         storage::get_deposit_readonly(&env, &depositor, deposit_id)
+    }
+
+    /// Returns the ledger-based vault entry for the given depositor and deposit id.
+    /// Read-only — does not bump storage TTL.
+    pub fn get_vault_by_ledger(env: Env, depositor: Address, deposit_id: u32) -> Option<LedgerVaultEntry> {
+        storage::get_deposit_by_ledger_readonly(&env, &depositor, deposit_id)
+    }
+
+    /// Returns ledgers remaining until the ledger-based deposit unlocks.
+    /// Returns 0 if already unlocked or no deposit exists.
+    /// Read-only — does not bump storage TTL.
+    pub fn ledgers_remaining(env: Env, depositor: Address, deposit_id: u32) -> u32 {
+        match storage::get_deposit_by_ledger_readonly(&env, &depositor, deposit_id) {
+            None => 0,
+            Some(entry) => {
+                let current = env.ledger().sequence();
+                entry.unlock_ledger.saturating_sub(current)
+            }
+        }
     }
 
     pub fn get_vault_batch(env: Env, depositors: Vec<Address>, deposit_id: u32) -> Vec<Option<VaultEntry>> {
