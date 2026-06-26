@@ -404,6 +404,31 @@ pub fn is_paused(env: &Env) -> bool {
         .unwrap_or(false)
 }
 
+// ----------------------------------------------------------------
+//  Freeze helpers
+// ----------------------------------------------------------------
+
+pub fn set_frozen(env: &Env, depositor: &Address) {
+    let key = VaultKey::DepositorFrozen(depositor.clone());
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, BUMP_THRESHOLD, BUMP_TARGET);
+}
+
+pub fn is_frozen(env: &Env, depositor: &Address) -> bool {
+    let key = VaultKey::DepositorFrozen(depositor.clone());
+    env.storage()
+        .persistent()
+        .get::<VaultKey, bool>(&key)
+        .unwrap_or(false)
+}
+
+pub fn remove_frozen(env: &Env, depositor: &Address) {
+    let key = VaultKey::DepositorFrozen(depositor.clone());
+    env.storage().persistent().remove(&key);
+}
+
 pub fn get_depositors_page(env: &Env, offset: u32, limit: u32) -> Vec<Address> {
     let count = get_depositor_count_raw(env);
     let mut page: Vec<Address> = Vec::new(env);

@@ -20,6 +20,7 @@ pub enum VaultKey {
     MaxDeposit,
     MaxLockSecs,
     Paused,
+    DepositorFrozen(Address),
 }
 
 #[contracttype]

@@ -94,3 +94,13 @@ pub fn deposit_cancelled(
     );
     env.events().publish(topics, (amount, penalty));
 }
+
+pub fn frozen(env: &Env, admin: &Address, depositor: &Address) {
+    let topics = (Symbol::new(env, "frozen"), depositor.clone());
+    env.events().publish(topics, (admin.clone(),));
+}
+
+pub fn unfrozen(env: &Env, admin: &Address, depositor: &Address) {
+    let topics = (Symbol::new(env, "unfrozen"), depositor.clone());
+    env.events().publish(topics, (admin.clone(),));
+}

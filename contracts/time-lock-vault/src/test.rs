@@ -775,6 +775,125 @@ fn test_withdraw_to_no_deposit_fails() {
 }
 
 // ================================================================
+//  Freeze / Unfreeze
+// ================================================================
+
+#[test]
+fn test_freeze_depositor_by_admin_succeeds() {
+    let (env, vault, _token, admin, alice, _fee) = setup();
+    assert!(!vault.is_depositor_frozen(&alice));
+    vault.freeze_depositor(&admin, &alice);
+    assert!(vault.is_depositor_frozen(&alice));
+}
+
+#[test]
+fn test_unfreeze_depositor_by_admin_succeeds() {
+    let (env, vault, _token, admin, alice, _fee) = setup();
+    vault.freeze_depositor(&admin, &alice);
+    assert!(vault.is_depositor_frozen(&alice));
+    vault.unfreeze_depositor(&admin, &alice);
+    assert!(!vault.is_depositor_frozen(&alice));
+}
+
+#[test]
+fn test_freeze_depositor_by_non_admin_fails() {
+    let (env, vault, _token, _admin, alice, _fee) = setup();
+    let bob: Address = Address::generate(&env);
+    assert_eq!(
+        vault.try_freeze_depositor(&bob, &alice),
+        Err(Ok(VaultError::Unauthorized))
+    );
+}
+
+#[test]
+fn test_deposit_fails_when_frozen() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    vault.freeze_depositor(&admin, &alice);
+    assert_eq!(
+        vault.try_deposit(&alice, &token, &1_000, &(env.ledger().timestamp() + 3600), &0),
+        Err(Ok(VaultError::DepositorFrozen))
+    );
+}
+
+#[test]
+fn test_deposit_by_ledger_fails_when_frozen() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    vault.freeze_depositor(&admin, &alice);
+    assert_eq!(
+        vault.try_deposit_by_ledger(&alice, &token, &1_000, &(env.ledger().sequence() + 1000), &0),
+        Err(Ok(VaultError::DepositorFrozen))
+    );
+}
+
+#[test]
+fn test_withdraw_fails_when_frozen() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    let unlock_time = env.ledger().timestamp() + 3600;
+    vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
+    advance_time(&env, 3601);
+
+    vault.freeze_depositor(&admin, &alice);
+    assert_eq!(
+        vault.try_withdraw(&alice, &0),
+        Err(Ok(VaultError::DepositorFrozen))
+    );
+}
+
+#[test]
+fn test_withdraw_to_fails_when_frozen() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    let recipient: Address = Address::generate(&env);
+    let unlock_time = env.ledger().timestamp() + 3600;
+    vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
+    advance_time(&env, 3601);
+
+    vault.freeze_depositor(&admin, &alice);
+    assert_eq!(
+        vault.try_withdraw_to(&alice, &0, &recipient),
+        Err(Ok(VaultError::DepositorFrozen))
+    );
+}
+
+#[test]
+fn test_cancel_deposit_fails_when_frozen() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    let unlock_time = env.ledger().timestamp() + 3600;
+    vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
+
+    vault.freeze_depositor(&admin, &alice);
+    assert_eq!(
+        vault.try_cancel_deposit(&alice, &0),
+        Err(Ok(VaultError::DepositorFrozen))
+    );
+}
+
+#[test]
+fn test_emergency_withdraw_still_works_when_frozen() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    let unlock_time = env.ledger().timestamp() + 86400;
+    vault.deposit(&alice, &token, &2_000, &unlock_time, &0);
+
+    vault.freeze_depositor(&admin, &alice);
+    vault.emergency_withdraw(&admin, &alice, &0);
+
+    assert!(vault.get_vault(&alice, &0).is_none());
+}
+
+#[test]
+fn test_unfreeze_restores_deposit_capability() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    vault.freeze_depositor(&admin, &alice);
+    assert_eq!(
+        vault.try_deposit(&alice, &token, &1_000, &(env.ledger().timestamp() + 3600), &0),
+        Err(Ok(VaultError::DepositorFrozen))
+    );
+
+    vault.unfreeze_depositor(&admin, &alice);
+    vault.deposit(&alice, &token, &1_000, &(env.ledger().timestamp() + 3600), &0);
+    assert!(vault.get_vault(&alice, &0).is_some());
+}
+
+// ================================================================
 //  Configurable limits
 // ================================================================
 

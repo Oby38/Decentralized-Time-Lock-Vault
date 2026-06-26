@@ -68,6 +68,10 @@ impl TimeLockVault {
             return Err(VaultError::ContractPaused);
         }
 
+        if storage::is_frozen(&env, &depositor) {
+            return Err(VaultError::DepositorFrozen);
+        }
+
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
@@ -195,6 +199,10 @@ impl TimeLockVault {
             return Err(VaultError::ContractPaused);
         }
 
+        if storage::is_frozen(&env, &depositor) {
+            return Err(VaultError::DepositorFrozen);
+        }
+
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
@@ -250,6 +258,10 @@ impl TimeLockVault {
 
     pub fn cancel_deposit(env: Env, depositor: Address, deposit_id: u32) -> Result<(), VaultError> {
         depositor.require_auth();
+
+        if storage::is_frozen(&env, &depositor) {
+            return Err(VaultError::DepositorFrozen);
+        }
 
         if let Some(entry) = storage::get_deposit(&env, &depositor, deposit_id) {
             let now = env.ledger().timestamp();
@@ -317,6 +329,10 @@ impl TimeLockVault {
     pub fn withdraw(env: Env, depositor: Address, deposit_id: u32) -> Result<(), VaultError> {
         depositor.require_auth();
 
+        if storage::is_frozen(&env, &depositor) {
+            return Err(VaultError::DepositorFrozen);
+        }
+
         if let Some(entry) = storage::get_deposit_readonly(&env, &depositor, deposit_id) {
             let now = env.ledger().timestamp();
             if now < entry.unlock_time {
@@ -363,6 +379,10 @@ impl TimeLockVault {
         recipient: Address,
     ) -> Result<(), VaultError> {
         depositor.require_auth();
+
+        if storage::is_frozen(&env, &depositor) {
+            return Err(VaultError::DepositorFrozen);
+        }
 
         if let Some(entry) = storage::get_deposit_readonly(&env, &depositor, deposit_id) {
             let now = env.ledger().timestamp();
@@ -604,6 +624,32 @@ impl TimeLockVault {
         storage::remove_pending_admin(&env);
         events::admin_renounced(&env, &admin);
         Ok(())
+    }
+
+    // ----------------------------------------------------------------
+    //  Admin: Freeze / Unfreeze
+    // ----------------------------------------------------------------
+
+    pub fn freeze_depositor(env: Env, admin: Address, depositor: Address) -> Result<(), VaultError> {
+        admin.require_auth();
+        storage::require_admin(&env, &admin)?;
+
+        storage::set_frozen(&env, &depositor);
+        events::frozen(&env, &admin, &depositor);
+        Ok(())
+    }
+
+    pub fn unfreeze_depositor(env: Env, admin: Address, depositor: Address) -> Result<(), VaultError> {
+        admin.require_auth();
+        storage::require_admin(&env, &admin)?;
+
+        storage::remove_frozen(&env, &depositor);
+        events::unfrozen(&env, &admin, &depositor);
+        Ok(())
+    }
+
+    pub fn is_depositor_frozen(env: Env, depositor: Address) -> bool {
+        storage::is_frozen(&env, &depositor)
     }
 
     // ----------------------------------------------------------------
