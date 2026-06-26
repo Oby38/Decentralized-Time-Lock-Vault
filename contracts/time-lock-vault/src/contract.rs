@@ -75,6 +75,10 @@ impl TimeLockVault {
             return Err(VaultError::DepositorFrozen);
         }
 
+        if storage::is_token_frozen(&env, &token) {
+            return Err(VaultError::TokenFrozen);
+        }
+
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
@@ -84,7 +88,8 @@ impl TimeLockVault {
             return Err(VaultError::AmountTooLarge);
         }
 
-        if penalty_bps > 10_000 {
+        let effective_max_bps = storage::get_max_penalty_bps(&env).unwrap_or(10_000);
+        if penalty_bps > effective_max_bps {
             return Err(VaultError::InvalidPenaltyBps);
         }
 
@@ -99,9 +104,6 @@ impl TimeLockVault {
             return Err(VaultError::LockDurationTooLong);
         }
 
-        // --- Duplicate deposit guard (single read, no TTL bump) ---
-        if storage::get_deposit_readonly(&env, &depositor).is_some() {
-            return Err(VaultError::DepositAlreadyExists);
         if lock_duration < MIN_LOCK_DURATION_SECS {
             return Err(VaultError::LockDurationTooShort);
         }
@@ -141,6 +143,10 @@ impl TimeLockVault {
             return Err(VaultError::ContractPaused);
         }
 
+        if storage::is_token_frozen(&env, &token) {
+            return Err(VaultError::TokenFrozen);
+        }
+
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
@@ -150,7 +156,8 @@ impl TimeLockVault {
             return Err(VaultError::AmountTooLarge);
         }
 
-        if penalty_bps > 10_000 {
+        let effective_max_bps = storage::get_max_penalty_bps(&env).unwrap_or(10_000);
+        if penalty_bps > effective_max_bps {
             return Err(VaultError::InvalidPenaltyBps);
         }
 
@@ -210,6 +217,10 @@ impl TimeLockVault {
             return Err(VaultError::DepositorFrozen);
         }
 
+        if storage::is_token_frozen(&env, &token) {
+            return Err(VaultError::TokenFrozen);
+        }
+
         if amount <= 0 {
             return Err(VaultError::InvalidAmount);
         }
@@ -219,7 +230,8 @@ impl TimeLockVault {
             return Err(VaultError::AmountTooLarge);
         }
 
-        if penalty_bps > 10_000 {
+        let effective_max_bps = storage::get_max_penalty_bps(&env).unwrap_or(10_000);
+        if penalty_bps > effective_max_bps {
             return Err(VaultError::InvalidPenaltyBps);
         }
 
@@ -281,7 +293,9 @@ impl TimeLockVault {
             let token_client = token::Client::new(&env, &entry.token);
             let contract = env.current_contract_address();
 
-            let penalty: i128 = (entry.amount * entry.penalty_bps as i128) / 10_000;
+            let bps_penalty: i128 = (entry.amount * entry.penalty_bps as i128) / 10_000;
+            let min_fee: i128 = storage::get_min_cancel_fee(&env).unwrap_or(0);
+            let penalty = bps_penalty.max(min_fee).min(entry.amount);
             let refund = entry.amount - penalty;
 
             if penalty > 0 {
@@ -312,7 +326,9 @@ impl TimeLockVault {
             let token_client = token::Client::new(&env, &entry.token);
             let contract = env.current_contract_address();
 
-            let penalty: i128 = (entry.amount * entry.penalty_bps as i128) / 10_000;
+            let bps_penalty: i128 = (entry.amount * entry.penalty_bps as i128) / 10_000;
+            let min_fee: i128 = storage::get_min_cancel_fee(&env).unwrap_or(0);
+            let penalty = bps_penalty.max(min_fee).min(entry.amount);
             let refund = entry.amount - penalty;
 
             if penalty > 0 {
@@ -448,9 +464,7 @@ impl TimeLockVault {
             return Ok(());
         }
 
-        // --- Load deposit (no TTL bump — entry is about to be removed) ---
-        let entry = storage::get_deposit_readonly(&env, &depositor)
-            .ok_or(VaultError::NoDepositFound)?;
+        // --- Try ledger-based deposit ---
         if let Some(entry) = storage::get_deposit_by_ledger_readonly(&env, &depositor, deposit_id) {
             storage::remove_deposit_by_ledger(&env, &depositor, deposit_id);
             if !storage::has_any_deposit(&env, &depositor) {
@@ -735,6 +749,70 @@ impl TimeLockVault {
 
     pub fn is_depositor_frozen(env: Env, depositor: Address) -> bool {
         storage::is_frozen(&env, &depositor)
+    }
+
+    // ----------------------------------------------------------------
+    //  Admin: Token Freeze (#331)
+    // ----------------------------------------------------------------
+
+    /// Freezes a token address, preventing new deposits of that token.
+    pub fn freeze_token(env: Env, admin: Address, token: Address) -> Result<(), VaultError> {
+        admin.require_auth();
+        storage::require_admin(&env, &admin)?;
+        storage::set_token_frozen(&env, &token);
+        Ok(())
+    }
+
+    /// Unfreezes a previously frozen token, re-enabling deposits.
+    pub fn unfreeze_token(env: Env, admin: Address, token: Address) -> Result<(), VaultError> {
+        admin.require_auth();
+        storage::require_admin(&env, &admin)?;
+        storage::remove_token_frozen(&env, &token);
+        Ok(())
+    }
+
+    /// Returns true if new deposits of this token are blocked.
+    pub fn is_token_frozen(env: Env, token: Address) -> bool {
+        storage::is_token_frozen(&env, &token)
+    }
+
+    // ----------------------------------------------------------------
+    //  Admin: Penalty Cap / Fee Rules (#332)
+    // ----------------------------------------------------------------
+
+    /// Sets the global maximum penalty in basis points (0–10000).
+    /// Deposits whose `penalty_bps` exceeds this cap are rejected.
+    /// Pass `10000` to remove an effective cap.
+    pub fn set_max_penalty_bps(env: Env, admin: Address, bps: u32) -> Result<(), VaultError> {
+        admin.require_auth();
+        storage::require_admin(&env, &admin)?;
+        if bps > 10_000 {
+            return Err(VaultError::InvalidPenaltyBps);
+        }
+        storage::set_max_penalty_bps(&env, bps);
+        Ok(())
+    }
+
+    /// Returns the configured global maximum penalty bps, or None if unset (default 10000).
+    pub fn get_max_penalty_bps(env: Env) -> Option<u32> {
+        storage::get_max_penalty_bps(&env)
+    }
+
+    /// Sets a minimum flat cancel fee in token units applied on `cancel_deposit`.
+    /// The effective penalty is `max(bps_penalty, min_cancel_fee)`, capped at the full amount.
+    pub fn set_min_cancel_fee(env: Env, admin: Address, fee: i128) -> Result<(), VaultError> {
+        admin.require_auth();
+        storage::require_admin(&env, &admin)?;
+        if fee < 0 {
+            return Err(VaultError::InvalidAmount);
+        }
+        storage::set_min_cancel_fee(&env, fee);
+        Ok(())
+    }
+
+    /// Returns the configured minimum cancel fee, or None if unset (default 0).
+    pub fn get_min_cancel_fee(env: Env) -> Option<i128> {
+        storage::get_min_cancel_fee(&env)
     }
 
     // ----------------------------------------------------------------

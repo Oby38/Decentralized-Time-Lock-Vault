@@ -24,4 +24,5 @@ pub enum VaultError {
     BatchTooLarge = 14,
     DepositorFrozen = 15,
     MigrationNotAllowed = 16,
+    TokenFrozen = 17,
 }

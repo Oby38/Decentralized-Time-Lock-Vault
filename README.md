@@ -185,6 +185,55 @@ Cancels a pending admin transfer. Only the current admin can cancel.
 #### `renounce_admin(admin)`
 Permanently removes admin privileges. After this call, `emergency_withdraw` and all admin functions are disabled forever. Makes the vault fully trustless.
 
+#### `freeze_depositor(admin, depositor)` — emergency freeze (#331)
+Admin-only. Blocks `depositor` from making new deposits and from calling `withdraw`. Use `emergency_withdraw` to return their funds while frozen.
+
+#### `unfreeze_depositor(admin, depositor)` — (#331)
+Admin-only. Lifts the freeze on `depositor`.
+
+#### `is_depositor_frozen(depositor) → bool`
+Returns `true` if the depositor is currently frozen.
+
+#### `freeze_token(admin, token)` — emergency freeze (#331)
+Admin-only. Prevents **new deposits** of the specified token contract address. Existing deposits are unaffected and can still be withdrawn normally.
+
+```
+# Example: block new USDC deposits after a security incident
+freeze_token(admin=ADMIN_ADDR, token=USDC_CONTRACT)
+```
+
+#### `unfreeze_token(admin, token)` — (#331)
+Admin-only. Re-enables deposits for a previously frozen token.
+
+#### `is_token_frozen(token) → bool`
+Returns `true` if new deposits of this token are blocked.
+
+#### `set_max_penalty_bps(admin, bps)` — penalty cap (#332)
+Admin-only. Sets the global upper bound on `penalty_bps` for new deposits (0–10000).
+Any deposit whose `penalty_bps` exceeds this value is rejected with `InvalidPenaltyBps`.
+Pass `10000` to effectively remove the cap.
+
+```
+# Restrict all new deposits to a maximum 20% early-exit penalty
+set_max_penalty_bps(admin=ADMIN_ADDR, bps=2000)
+```
+
+#### `get_max_penalty_bps() → Option<u32>` — (#332)
+Returns the configured penalty cap in basis points, or `None` if unset (defaults to 10000).
+
+#### `set_min_cancel_fee(admin, fee)` — minimum cancel fee (#332)
+Admin-only. Sets a minimum flat fee (in token units) charged on every `cancel_deposit` call.
+Effective penalty = `max(bps_penalty, min_cancel_fee)`, capped at the full deposit amount.
+Set to `0` to disable.
+
+```
+# Require at least 100 stroops fee on every early cancellation
+set_min_cancel_fee(admin=ADMIN_ADDR, fee=100)
+```
+
+#### `get_min_cancel_fee() → Option<i128>` — (#332)
+Returns the configured minimum cancel fee, or `None` if unset (defaults to 0).
+
 ---
 
 ### 📖 Read-only Queries
@@ -284,6 +333,10 @@ TTL is bumped on every **write**. Read-only query functions (`get_vault`, `time_
 | 10 | `LockDurationTooShort` | Lock period is shorter than the minimum (60 s) |
 | 11 | `InvalidAdmin` | Nominated admin is the same as the current admin |
 | 12 | `BatchTooLarge` | `depositors.len()` exceeds `MAX_BATCH_SIZE` (25) |
+| 13 | `FundsAlreadyUnlocked` | Funds are already past unlock time; use `withdraw` |
+| 14 | `DepositorFrozen` | Depositor is frozen; contact admin |
+| 15 | `MigrationNotAllowed` | Migration precondition failed |
+| 16 | `TokenFrozen` | Token is frozen; new deposits blocked (#331) |
 
 ---
 
@@ -360,13 +413,27 @@ make test
 make check
 ```
 
-### 🛡️ Security audit
+### 🛡️ Security audit (CI + local)
+
+The CI pipeline runs `cargo audit` on every push and pull request via the `security-audit` job
+in `.github/workflows/ci.yml` (using `rustsec/audit-check`). This checks all dependencies
+against the [RustSec Advisory Database](https://rustsec.org/) and fails the build if any
+known-vulnerable dependency is detected.
+
+Run the same check locally:
 
 ```bash
 make audit
+# or directly:
+cargo audit
 ```
 
-Runs `cargo audit` to check all dependencies against the [RustSec Advisory Database](https://rustsec.org/).
+`cargo-audit` is installed automatically as part of `make check` (which mirrors the full CI
+pipeline: `fmt-check → lint → test → audit → deny`).
+
+**GitHub Release WASM builds** — pushing a version tag (`v*`) also triggers
+`.github/workflows/release.yml`, which builds an optimized WASM binary and attaches it to the
+GitHub Release as `time_lock_vault.optimized.wasm`.
 
 ### 📦 License & dependency policy
 

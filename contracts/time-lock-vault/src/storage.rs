@@ -107,11 +107,6 @@ pub fn set_deposit(env: &Env, depositor: &Address, deposit_id: u32, entry: &Vaul
     inc_active_count(env, depositor);
 }
 
-/// Retrieve the vault entry for `depositor` — does NOT bump TTL.
-/// Use this for all reads (writes/mutations as well as view functions)
-/// since mutations that follow will either remove the entry or replace it.
-pub fn get_deposit_readonly(env: &Env, depositor: &Address) -> Option<VaultEntry> {
-    let key = VaultKey::Deposit(depositor.clone());
 pub fn get_deposit(env: &Env, depositor: &Address, deposit_id: u32) -> Option<VaultEntry> {
     let key = VaultKey::Deposit(depositor.clone(), deposit_id);
     let entry: Option<VaultEntry> = env.storage().persistent().get(&key);
@@ -416,6 +411,57 @@ pub fn is_frozen(env: &Env, depositor: &Address) -> bool {
 pub fn remove_frozen(env: &Env, depositor: &Address) {
     let key = VaultKey::DepositorFrozen(depositor.clone());
     env.storage().persistent().remove(&key);
+}
+
+// ----------------------------------------------------------------
+//  Token freeze helpers (#331)
+// ----------------------------------------------------------------
+
+pub fn set_token_frozen(env: &Env, token: &Address) {
+    let key = VaultKey::TokenFrozen(token.clone());
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, BUMP_THRESHOLD, BUMP_TARGET);
+}
+
+pub fn is_token_frozen(env: &Env, token: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get::<VaultKey, bool>(&VaultKey::TokenFrozen(token.clone()))
+        .unwrap_or(false)
+}
+
+pub fn remove_token_frozen(env: &Env, token: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&VaultKey::TokenFrozen(token.clone()));
+}
+
+// ----------------------------------------------------------------
+//  Penalty cap / fee rule helpers (#332)
+// ----------------------------------------------------------------
+
+/// Set the global maximum penalty basis points cap (0–10000).
+pub fn set_max_penalty_bps(env: &Env, bps: u32) {
+    env.storage().persistent().set(&VaultKey::MaxPenaltyBps, &bps);
+    extend_ttl(env, &VaultKey::MaxPenaltyBps);
+}
+
+/// Returns the configured max penalty bps, or None (no cap beyond 10000).
+pub fn get_max_penalty_bps(env: &Env) -> Option<u32> {
+    env.storage().persistent().get(&VaultKey::MaxPenaltyBps)
+}
+
+/// Set the minimum flat cancel fee in token units (absolute amount, not bps).
+pub fn set_min_cancel_fee(env: &Env, fee: i128) {
+    env.storage().persistent().set(&VaultKey::MinCancelFee, &fee);
+    extend_ttl(env, &VaultKey::MinCancelFee);
+}
+
+/// Returns the configured minimum cancel fee, or None (no floor).
+pub fn get_min_cancel_fee(env: &Env) -> Option<i128> {
+    env.storage().persistent().get(&VaultKey::MinCancelFee)
 }
 
 pub fn get_depositors_page(env: &Env, offset: u32, limit: u32) -> Vec<Address> {
