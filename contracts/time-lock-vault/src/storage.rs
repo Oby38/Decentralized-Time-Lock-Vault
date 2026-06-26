@@ -126,12 +126,17 @@ pub fn is_initialized(env: &Env) -> bool {
         .persistent()
         .get::<VaultKey, bool>(&VaultKey::Initialized)
         .unwrap_or(false)
+}
+
+// ----------------------------------------------------------------
 //  Runtime limits helpers
 // ----------------------------------------------------------------
 
 pub fn set_max_deposit(env: &Env, v: i128) {
     env.storage().persistent().set(&VaultKey::MaxDeposit, &v);
-    env.storage().persistent().extend_ttl(&VaultKey::MaxDeposit, BUMP_THRESHOLD, BUMP_TARGET);
+    env.storage()
+        .persistent()
+        .extend_ttl(&VaultKey::MaxDeposit, BUMP_THRESHOLD, BUMP_TARGET);
 }
 
 pub fn get_max_deposit(env: &Env) -> Option<i128> {
@@ -140,7 +145,9 @@ pub fn get_max_deposit(env: &Env) -> Option<i128> {
 
 pub fn set_max_lock_secs(env: &Env, v: u64) {
     env.storage().persistent().set(&VaultKey::MaxLockSecs, &v);
-    env.storage().persistent().extend_ttl(&VaultKey::MaxLockSecs, BUMP_THRESHOLD, BUMP_TARGET);
+    env.storage()
+        .persistent()
+        .extend_ttl(&VaultKey::MaxLockSecs, BUMP_THRESHOLD, BUMP_TARGET);
 }
 
 pub fn get_max_lock_secs(env: &Env) -> Option<u64> {
@@ -221,74 +228,19 @@ pub fn get_depositors_page(env: &Env, offset: u32, limit: u32) -> Vec<Address> {
 }
 
 // ----------------------------------------------------------------
-//  Fee recipient helpers
+//  Pause state helpers
 // ----------------------------------------------------------------
 
-pub fn set_fee_recipient(env: &Env, recipient: &Address) {
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().persistent().set(&VaultKey::Paused, &paused);
     env.storage()
         .persistent()
-        .set(&VaultKey::FeeRecipient, recipient);
+        .extend_ttl(&VaultKey::Paused, BUMP_THRESHOLD, BUMP_TARGET);
+}
+
+pub fn is_paused(env: &Env) -> bool {
     env.storage()
         .persistent()
-        .extend_ttl(&VaultKey::FeeRecipient, BUMP_THRESHOLD, BUMP_TARGET);
-}
-
-pub fn get_fee_recipient(env: &Env) -> Option<Address> {
-    env.storage().persistent().get(&VaultKey::FeeRecipient)
-}
-
-// ----------------------------------------------------------------
-//  Depositor list helpers
-// ----------------------------------------------------------------
-
-fn get_depositor_list(env: &Env) -> Vec<Address> {
-    env.storage()
-        .persistent()
-        .get(&VaultKey::DepositorList)
-        .unwrap_or_else(|| Vec::new(env))
-}
-
-fn save_depositor_list(env: &Env, list: &Vec<Address>) {
-    env.storage()
-        .persistent()
-        .set(&VaultKey::DepositorList, list);
-    env.storage()
-        .persistent()
-        .extend_ttl(&VaultKey::DepositorList, BUMP_THRESHOLD, BUMP_TARGET);
-}
-
-/// Append `depositor` to the global depositor list.
-pub fn add_depositor(env: &Env, depositor: &Address) {
-    let mut list = get_depositor_list(env);
-    list.push_back(depositor.clone());
-    save_depositor_list(env, &list);
-}
-
-/// Remove `depositor` from the global depositor list.
-pub fn remove_depositor(env: &Env, depositor: &Address) {
-    let list = get_depositor_list(env);
-    let mut new_list: Vec<Address> = Vec::new(env);
-    for addr in list.iter() {
-        if &addr != depositor {
-            new_list.push_back(addr);
-        }
-    }
-    save_depositor_list(env, &new_list);
-}
-
-/// Returns the total number of active depositors.
-pub fn get_depositor_count(env: &Env) -> u32 {
-    get_depositor_list(env).len()
-}
-
-/// Returns a page of depositors starting at `offset`, up to `limit` entries.
-pub fn get_depositors_page(env: &Env, offset: u32, limit: u32) -> Vec<Address> {
-    let list = get_depositor_list(env);
-    let len = list.len();
-    let mut page: Vec<Address> = Vec::new(env);
-    let end = (offset + limit).min(len);
-    for i in offset..end {
-        page.push_back(list.get(i).unwrap());
-    }
-    page
+        .get::<VaultKey, bool>(&VaultKey::Paused)
+        .unwrap_or(false)
 }

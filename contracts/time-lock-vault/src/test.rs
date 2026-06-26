@@ -18,7 +18,6 @@ use crate::{
 //  Test helpers
 // ================================================================
 
-fn setup() -> (Env, TimeLockVaultClient<'static>, Address, Address, Address) {
 /// Returns (env, vault_client, token_address, admin, alice, fee_recipient).
 fn setup() -> (Env, TimeLockVaultClient<'static>, Address, Address, Address, Address) {
     let env = Env::default();
@@ -37,7 +36,6 @@ fn setup() -> (Env, TimeLockVaultClient<'static>, Address, Address, Address, Add
     StellarAssetClient::new(&env, &token_address).mint(&alice, &10_000);
 
     vault.initialize(&admin, &fee_recipient);
-    vault.initialize(&admin, &None, &None);
 
     (env, vault, token_address, admin, alice, fee_recipient)
 }
@@ -1281,4 +1279,165 @@ fn test_auth_renounce_admin_requires_admin() {
     let (env, vault, _token, admin, _alice) = setup();
     vault.renounce_admin(&admin);
     assert_eq!(env.auths()[0].0, admin);
+}
+
+
+// ================================================================
+//  Pause State Tests (Issue #291)
+// ================================================================
+
+#[test]
+fn test_pause_deposits_prevents_deposit() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    vault.pause_deposits(&admin);
+    let unlock_time = env.ledger().timestamp() + 3600;
+    assert_eq!(vault.try_deposit(&alice, &token, &1_000, &unlock_time, &0), Err(Ok(VaultError::Unauthorized)));
+}
+
+#[test]
+fn test_pause_deposits_prevents_deposit_with_penalty() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    vault.pause_deposits(&admin);
+    let unlock_time = env.ledger().timestamp() + 3600;
+    let result = vault.try_deposit(&alice, &token, &1_000, &unlock_time, &100);
+    assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
+}
+
+#[test]
+fn test_unpause_deposits_allows_deposit() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    vault.pause_deposits(&admin);
+    vault.unpause_deposits(&admin);
+    let unlock_time = env.ledger().timestamp() + 3600;
+    let id = vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
+    assert_eq!(id, 0);
+}
+
+#[test]
+fn test_is_paused_returns_false_initially() {
+    let (_env, vault, _token, _admin, _alice, _fee) = setup();
+    assert!(!vault.is_paused());
+}
+
+#[test]
+fn test_is_paused_returns_true_after_pause() {
+    let (env, vault, _token, admin, _alice, _fee) = setup();
+    vault.pause_deposits(&admin);
+    assert!(vault.is_paused());
+}
+
+#[test]
+fn test_pause_deposits_requires_admin() {
+    let (env, vault, _token, _admin, alice, _fee) = setup();
+    let result = vault.try_pause_deposits(&alice);
+    assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
+}
+
+#[test]
+fn test_unpause_deposits_requires_admin() {
+    let (env, vault, _token, admin, alice, _fee) = setup();
+    vault.pause_deposits(&admin);
+    let result = vault.try_unpause_deposits(&alice);
+    assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
+}
+
+// ================================================================
+//  Ledger-based Deposit Tests (Issue #291)
+// ================================================================
+
+#[test]
+fn test_deposit_by_ledger_success() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    let current_ledger = env.ledger().sequence();
+    let unlock_ledger = current_ledger + 100;
+    let id = vault.deposit_by_ledger(&alice, &token, &1_000, &unlock_ledger);
+    assert_eq!(id, 0);
+    let entry = vault.get_vault(&alice, &id).expect("entry should exist");
+    assert_eq!(entry.amount, 1_000);
+    assert_eq!(entry.token, token);
+}
+
+#[test]
+fn test_deposit_by_ledger_enforces_minimum_duration() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    let current_ledger = env.ledger().sequence();
+    // Minimum is ~60s = ~12 ledgers at 5s per ledger
+    let unlock_ledger = current_ledger + 11;
+    let result = vault.try_deposit_by_ledger(&alice, &token, &1_000, &unlock_ledger);
+    assert_eq!(result, Err(Ok(VaultError::LockDurationTooShort)));
+}
+
+#[test]
+fn test_deposit_by_ledger_allows_minimum_valid_duration() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    let current_ledger = env.ledger().sequence();
+    // Minimum is ~60s = ~12 ledgers at 5s per ledger
+    let unlock_ledger = current_ledger + 12;
+    let id = vault.deposit_by_ledger(&alice, &token, &1_000, &unlock_ledger);
+    assert_eq!(id, 0);
+}
+
+#[test]
+fn test_deposit_by_ledger_enforces_maximum_duration() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    let current_ledger = env.ledger().sequence();
+    // Maximum is ~5 years = 157_788_000 seconds / 5 = ~31_557_600 ledgers
+    let unlock_ledger = current_ledger + 31_557_601;
+    let result = vault.try_deposit_by_ledger(&alice, &token, &1_000, &unlock_ledger);
+    assert_eq!(result, Err(Ok(VaultError::LockDurationTooLong)));
+}
+
+#[test]
+fn test_deposit_by_ledger_rejects_past_ledger() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    let current_ledger = env.ledger().sequence();
+    let unlock_ledger = current_ledger - 1;
+    let result = vault.try_deposit_by_ledger(&alice, &token, &1_000, &unlock_ledger);
+    assert_eq!(result, Err(Ok(VaultError::UnlockTimeNotInFuture)));
+}
+
+#[test]
+fn test_deposit_by_ledger_rejects_current_ledger() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    let current_ledger = env.ledger().sequence();
+    let result = vault.try_deposit_by_ledger(&alice, &token, &1_000, &current_ledger);
+    assert_eq!(result, Err(Ok(VaultError::UnlockTimeNotInFuture)));
+}
+
+#[test]
+fn test_deposit_by_ledger_prevents_zero_amount() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    let current_ledger = env.ledger().sequence();
+    let unlock_ledger = current_ledger + 100;
+    assert_eq!(vault.try_deposit_by_ledger(&alice, &token, &0, &unlock_ledger), Err(Ok(VaultError::InvalidAmount)));
+}
+
+#[test]
+fn test_deposit_by_ledger_respects_pause_state() {
+    let (env, vault, token, admin, alice, _fee) = setup();
+    vault.pause_deposits(&admin);
+    let current_ledger = env.ledger().sequence();
+    let unlock_ledger = current_ledger + 100;
+    let result = vault.try_deposit_by_ledger(&alice, &token, &1_000, &unlock_ledger);
+    assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
+}
+
+#[test]
+fn test_deposit_by_ledger_with_max_amount() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    StellarAssetClient::new(&env, &token).mint(&alice, &MAX_DEPOSIT_AMOUNT);
+    let current_ledger = env.ledger().sequence();
+    let unlock_ledger = current_ledger + 1_000_000;
+    let id = vault.deposit_by_ledger(&alice, &token, &MAX_DEPOSIT_AMOUNT, &unlock_ledger);
+    assert_eq!(id, 0);
+}
+
+#[test]
+fn test_deposit_by_ledger_exceeding_max_amount_fails() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    StellarAssetClient::new(&env, &token).mint(&alice, &MAX_DEPOSIT_AMOUNT);
+    let current_ledger = env.ledger().sequence();
+    let unlock_ledger = current_ledger + 1_000_000;
+    let result = vault.try_deposit_by_ledger(&alice, &token, &(MAX_DEPOSIT_AMOUNT + 1), &unlock_ledger);
+    assert_eq!(result, Err(Ok(VaultError::AmountTooLarge)));
 }
