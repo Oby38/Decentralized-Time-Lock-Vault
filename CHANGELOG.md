@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Documentation clarified current contract behavior for timestamp-based vs ledger-based deposits, pause semantics, and admin recovery.
+
 ## [0.1.0] - 2026-05-31
 
 ### Added

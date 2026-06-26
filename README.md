@@ -36,11 +36,11 @@ A production-ready Soroban smart contract on the Stellar blockchain that locks X
 
 The deposit and withdrawal lifecycle:
 
-1. **Deposit** — A user calls `deposit(token, amount, unlock_time)` → tokens transfer from their wallet into the contract
-2. **Storage** — The contract stores a `VaultEntry` in **Persistent Storage** keyed by the depositor's address
-3. **Verification** — When the user calls `withdraw()`, the contract checks `env.ledger().timestamp() >= unlock_time`
-4. **Unlock** — If the time has passed, tokens are returned. Otherwise the call fails with `FundsStillLocked`
-5. **Admin Recovery** — An admin can perform emergency withdrawals (funds always return to the depositor, never to the admin)
+1. **Deposit** — A user calls `deposit(token, amount, unlock_time)` or `deposit_by_ledger(token, amount, unlock_ledger)` → tokens transfer from their wallet into the contract
+2. **Storage** — The contract stores a `VaultEntry` or `LedgerVaultEntry` in **Persistent Storage** keyed by the depositor's address and a per-depositor `deposit_id`
+3. **Verification** — When the user calls `withdraw()`, the contract checks time-based deposits first (`env.ledger().timestamp() >= unlock_time`) and then ledger-based deposits (`env.ledger().sequence() >= unlock_ledger`)
+4. **Unlock** — If the lock condition is satisfied, tokens are returned. Otherwise the call fails with `FundsStillLocked`
+5. **Admin Recovery** — An admin can perform emergency withdrawals for timestamp-based deposits only (funds always return to the depositor, never to the admin)
 6. **Trustless Mode** — Admin rights can be transferred via a two-step process, or permanently renounced to make the vault fully trustless
 
 ---
@@ -123,8 +123,37 @@ All entries use TTL bump threshold â‰ˆ 30 days and target â‰ˆ 5.2 years 
 
 ### 🔧 Initialization
 
-#### `initialize(admin: Address, max_deposit: Option<i128>, max_lock_secs: Option<u64>)`
-Sets the admin address. Optionally overrides the compile-time limits for this deployment. Pass `None` to use the defaults (`10^15` and `5 years`). Must be called once after deployment.
+#### `initialize(admin: Address, fee_recipient: Address, max_deposit: Option<i128>, max_lock_secs: Option<u64>)`
+Sets the admin address and the fee recipient. Optionally overrides the compile-time limits for this deployment. Pass `None` to use the defaults (`10^15` and `5 years`). Must be called once after deployment.
+
+---
+
+### 🕒 Timing and Deposit Types
+
+This contract currently supports two scheduling mechanisms:
+
+- **Timestamp-based deposits** via `deposit` / `deposit_for`
+  - Unlock when `env.ledger().timestamp() >= unlock_time`
+  - `cancel_deposit`, `withdraw_to`, `get_vault`, `time_remaining`, and `get_deposit_ids` work only for timestamp-based deposits in the current implementation
+- **Ledger-based deposits** via `deposit_by_ledger`
+  - Unlock when `env.ledger().sequence() >= unlock_ledger`
+  - `withdraw` supports ledger-based deposits, but discovery/read-only helpers do not currently expose them
+
+`withdraw` checks timestamp-based deposits first, then ledger-based deposits for the same depositor/deposit_id.
+
+Example: timestamp-based deposit
+```
+let now: u64 = env.ledger().timestamp();
+let one_hour = 3_600_u64;
+contract.deposit(&depositor, &token, &amount, &(now + one_hour), &0_u32);
+```
+
+Example: ledger-based deposit
+```
+let current_ledger: u32 = env.ledger().sequence();
+let unlock_ledger = current_ledger + 720; // ~1 hour later at ~5s per ledger
+contract.deposit_by_ledger(&depositor, &token, &amount, &unlock_ledger, &0_u32);
+```
 
 ---
 
@@ -137,41 +166,63 @@ Locks `amount` of `token` until `unlock_time` (Unix seconds).
 |---|---|---|
 | `depositor` | `Address` | Must sign |
 | `token` | `Address` | SEP-41 token contract |
-| `amount` | `i128` | `0 < amount â‰¤ 10^15` |
-| `unlock_time` | `u64` | `now < unlock_time â‰¤ now + 5 years` |
-| `penalty_bps` | `u32` | `0â€“10000` (basis points for early-exit penalty) |
+| `amount` | `i128` | `0 < amount ≤ 10^15` |
+| `unlock_time` | `u64` | `now < unlock_time ≤ now + 5 years` |
+| `penalty_bps` | `u32` | `0–10000` (basis points for early-exit penalty) |
 
-#### `cancel_deposit(depositor)`
-Cancels an active deposit before the unlock time. The penalty (`penalty_bps` set at deposit time) is sent to the `fee_recipient`; the remainder is returned to the depositor. Fails with `FundsStillLocked` if the vault is already past its unlock time (use `withdraw` instead).
+#### `deposit_for(payer, depositor, token, amount, unlock_time, penalty_bps)`
+Locks `amount` of `token` on behalf of `depositor`. The authenticated `payer` funds the deposit, while `depositor` remains the beneficiary.
 
-#### `withdraw(depositor)`
-Withdraws funds if `now >= unlock_time`. Fails with `FundsStillLocked` otherwise.
+#### `deposit_by_ledger(depositor, token, amount, unlock_ledger, penalty_bps)`
+Locks `amount` of `token` until `unlock_ledger` (ledger sequence number). `unlock_ledger` must be strictly greater than `env.ledger().sequence()`.
+
+| Param | Type | Constraint |
+|---|---|---|
+| `depositor` | `Address` | Must sign |
+| `token` | `Address` | SEP-41 token contract |
+| `amount` | `i128` | `0 < amount ≤ 10^15` |
+| `unlock_ledger` | `u32` | `current_ledger < unlock_ledger` |
+| `penalty_bps` | `u32` | `0–10000` |
+
+#### `cancel_deposit(depositor, deposit_id)`
+Cancels an active timestamp-based deposit before its unlock time. The penalty (`penalty_bps` set at deposit time) is sent to `fee_recipient`; the remainder is returned to the depositor.
+
+- Fails with `FundsStillLocked` if the deposit is already unlocked.
+- Only timestamp-based deposits are cancellable in the current implementation.
+
+#### `withdraw(depositor, deposit_id)`
+Withdraws funds after the lock condition is satisfied.
+
+- For timestamp-based deposits: succeeds when `env.ledger().timestamp() >= unlock_time`.
+- For ledger-based deposits: succeeds when `env.ledger().sequence() >= unlock_ledger`.
+- If both deposit types are present for the same `deposit_id`, timestamp-based deposits are checked first.
+- Returns `NoDepositFound` if neither deposit exists.
+
+#### `withdraw_to(depositor, deposit_id, recipient)`
+Withdraws a timestamp-based deposit to a third-party `recipient` after unlock.
+
+- Works only for timestamp-based deposits in the current implementation.
+- Fails with `FundsStillLocked` if the deposit has not yet unlocked.
 
 ---
 
 ### 👨‍⚖️ Admin Functions
 
-#### `emergency_withdraw(admin, depositor)`
-Admin-only. Returns funds to the depositor regardless of lock time. Funds always go to the depositor â€” never to the admin.
+#### `emergency_withdraw(admin, depositor, deposit_id)`
+Admin-only. Returns funds to the depositor regardless of lock time.
 
-#### `batch_emergency_withdraw(admin, depositors) â†’ Vec<WithdrawResult>`
-Admin-only. Processes emergency withdrawals for multiple depositors in a single transaction â€” useful for contract migrations where many depositors need recovery at once.
+- Funds always go to the depositor, never to the admin.
+- Works only for timestamp-based deposits in the current implementation.
 
-| Param | Type | Description |
-|---|---|---|
-| `admin` | `Address` | Must be the current admin. Signs **once** for the entire batch. |
-| `depositors` | `Vec<Address>` | Addresses to process. Max `MAX_BATCH_SIZE` (25) entries. |
+#### `pause(admin)`
+Pauses core deposit entry points.
 
-**Best-effort**: depositors with no active deposit are skipped and recorded as `success: false` in the result â€” the call never aborts due to a missing deposit, so all valid entries are always processed.
+- Blocks `deposit` and `deposit_for`.
+- In the current implementation, `deposit_by_ledger` is not blocked by pause.
+- `withdraw` and `cancel_deposit` continue to work while paused.
 
-**Returns** `Vec<WithdrawResult>` â€” one entry per input address:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `depositor` | `Address` | The input address |
-| `success` | `bool` | `true` = funds transferred; `false` = no deposit found, skipped |
-
-**Instruction budget**: Soroban caps each transaction at ~100M instructions. Each iteration costs roughly 1â€“2M instructions (two storage removes, one token transfer, one event). The hard cap of 25 keeps the batch well within budget. For larger sets, page through depositors with `get_depositors(offset, limit)` and call this function multiple times.
+#### `unpause(admin)`
+Resumes paused core deposit entry points.
 
 #### `transfer_admin(admin, new_admin)`
 Step 1 of a two-step admin transfer. Nominates `new_admin` as pending admin.
@@ -189,35 +240,45 @@ Permanently removes admin privileges. After this call, `emergency_withdraw` and 
 
 ### 📖 Read-only Queries
 
-#### `get_vault(depositor, deposit_id) â†’ Option<VaultEntry>`
-Returns the current vault entry. Does **not** bump storage TTL (no extra fees).
+#### `get_vault(depositor, deposit_id) → Option<VaultEntry>`
+Returns the current timestamp-based vault entry. Does **not** bump storage TTL.
 
-#### `time_remaining(depositor, deposit_id) â†’ u64`
-Returns seconds until unlock. Returns `0` if unlocked or no deposit exists. Does **not** bump TTL.
+- Does not return ledger-based deposits in the current implementation.
 
-#### `get_time() â†’ u64`
+#### `get_vault_batch(depositors, deposit_id) → Vec<Option<VaultEntry>>`
+Returns timestamp-based vault entries for a batch of depositors.
+
+#### `get_deposit_ids(depositor) → Vec<u32>`
+Returns timestamp-based deposit IDs only.
+
+- Ledger-based deposits are not currently discovered by this query.
+
+#### `time_remaining(depositor, deposit_id) → u64`
+Returns seconds until unlock for a timestamp-based deposit. Returns `0` if unlocked or not found. Does **not** bump TTL.
+
+#### `get_time() → u64`
 Returns the current ledger timestamp.
 
-#### `get_admin() â†’ Option<Address>`
+#### `get_admin() → Option<Address>`
 Returns the current admin, or `None` if renounced.
 
-#### `get_pending_admin() â†’ Option<Address>`
+#### `get_pending_admin() → Option<Address>`
 Returns the pending admin during a transfer, or `None`.
 
-#### `is_admin(address) â†’ bool`
-Returns `true` if `address` is the current admin. Returns `false` if admin has been renounced.
+#### `is_admin(address) → bool`
+Returns `true` if `address` is the current admin.
 
-#### `get_fee_recipient() â†’ Option<Address>`
+#### `get_fee_recipient() → Option<Address>`
 Returns the fee recipient address set at initialization.
 
-#### `get_constants() â†’ (i128, u64)`
-Returns the effective `(MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS)` for this deployment â€” runtime-configured values if set at `initialize`, otherwise the compile-time defaults.
+#### `get_constants() → (i128, u64)`
+Returns the effective `(MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS)` for this deployment — runtime-configured values if set at `initialize`, otherwise the compile-time defaults.
 
-#### `get_depositor_count() â†’ u32`
-Returns the total number of addresses with an active deposit.
+#### `get_depositor_count() → u32`
+Returns the total number of addresses with an active deposit, including timestamp-based and ledger-based deposits.
 
-#### `get_depositors(offset: u32, limit: u32) â†’ Vec<Address>`
-Returns a paginated slice of active depositor addresses.
+#### `get_depositors(offset: u32, limit: u32) → Vec<Address>`
+Returns a paginated slice of active depositor addresses, including those with timestamp-based and ledger-based deposits.
 
 | Param | Type | Description |
 |---|---|---|
@@ -225,6 +286,9 @@ Returns a paginated slice of active depositor addresses.
 | `limit` | `u32` | Maximum number of addresses to return |
 
 Use `offset=0, limit=N` for the first page, then increment `offset` by `N` for subsequent pages.
+
+#### `is_initialized() → bool`
+Returns whether `initialize` has been called.
 
 ---
 
@@ -260,7 +324,8 @@ All entries use **Persistent Storage** with TTL bump threshold â‰ˆ 30 days (
 | `VaultKey::MaxLockSecs` | `u64` | Set on `initialize` if overridden; absent means use compile-time default |
 | `VaultKey::DepositCounter(depositor)` | `u32` | Incremented on each `deposit`; never decremented |
 | `VaultKey::Deposit(depositor, id)` | `VaultEntry` | Created on `deposit`; removed on `withdraw` / `emergency_withdraw` / `cancel_deposit` |
-| `VaultKey::DepositorList` | `Vec<Address>` | Updated on `deposit` and `withdraw` |
+| `VaultKey::DepositByLedger(depositor, id)` | `LedgerVaultEntry` | Created on `deposit_by_ledger`; removed on `withdraw` |
+| `VaultKey::DepositorList` | `Vec<Address>` | Updated on `deposit`, `deposit_by_ledger`, and `withdraw` |
 
 `VaultEntry` fields: `token: Address`, `amount: i128`, `unlock_time: u64`, `depositor: Address`, `penalty_bps: u32`.
 
@@ -276,14 +341,14 @@ TTL is bumped on every **write**. Read-only query functions (`get_vault`, `time_
 | 2 | `UnlockTimeNotInFuture` | `unlock_time` â‰¤ current ledger time |
 | 3 | `NoDepositFound` | No active deposit for this address |
 | 4 | `FundsStillLocked` | Lock period not yet expired |
-| 5 | `DepositAlreadyExists` | Must withdraw before re-depositing |
+| 5 | `DepositAlreadyExists` | Reserved error code |
 | 6 | `LockDurationTooLong` | Lock period exceeds 5 years |
 | 7 | `Unauthorized` | Caller is not the admin |
 | 8 | `AmountTooLarge` | Amount exceeds 10^15 |
 | 9 | `InvalidPenaltyBps` | `penalty_bps` > 10000 |
-| 10 | `LockDurationTooShort` | Lock period is shorter than the minimum (60 s) |
-| 11 | `InvalidAdmin` | Nominated admin is the same as the current admin |
-| 12 | `BatchTooLarge` | `depositors.len()` exceeds `MAX_BATCH_SIZE` (25) |
+| 10 | `InvalidAdmin` | Nominated admin is the same as the current admin |
+| 11 | `LockDurationTooShort` | Lock period is shorter than the minimum (60 s) |
+| 12 | `ContractPaused` | Deposit entry points are paused |
 
 ---
 

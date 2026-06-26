@@ -30,6 +30,14 @@ The following are considered in-scope vulnerabilities:
 - Re-entrancy or checks-effects-interactions violations
 - Admin privilege escalation
 
+## Contract-specific guidance
+
+- `initialize()` has no built-in deploy-time guard. Always initialize in the same transaction as deployment to prevent an attacker from seizing admin rights before the contract is initialized.
+- `pause()` blocks `deposit` and `deposit_for`, but does not currently block `deposit_by_ledger`. Do not rely on pause as a complete halt for all deposit entry points.
+- `emergency_withdraw()` only supports timestamp-based deposits. Ledger-based deposits cannot be recovered via the current emergency withdraw path.
+- `get_vault()`, `get_deposit_ids()`, `time_remaining()`, and `withdraw_to()` operate only on timestamp-based deposits; they do not expose ledger-based deposits.
+- The contract is immutable after deployment. Fixes require redeploying to a new contract and migrating funds.
+
 ## Out of Scope
 
 - Stellar network-level issues (report to [Stellar](https://www.stellar.org/bug-bounty-program))
