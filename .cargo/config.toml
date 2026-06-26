@@ -1,0 +1,13 @@
+[build]
+# Default build target for this Soroban contract workspace.
+#
+# INTENTIONALLY LEFT COMMENTED OUT:
+# Uncommenting the line below would make `cargo build` produce a WASM binary
+# without needing --target, which is convenient. However, it also breaks
+# `cargo test`, because Soroban testutils require a native (host) build.
+#
+# Use the Makefile targets instead — they pass the correct flags for each task:
+#   make build   →  cargo build --target wasm32-unknown-unknown --release
+#   make test    →  cargo test --features testutils   (native, no --target)
+#
+# target = "wasm32-unknown-unknown"

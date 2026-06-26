@@ -1,33 +1,25 @@
 use soroban_sdk::contracterror;
 
-/// All contract-level errors.
-/// These map to u32 codes returned to the caller on failure.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum VaultError {
-    /// Caller tried to deposit zero or negative amount.
     InvalidAmount = 1,
-
-    /// The requested unlock_time is not in the future.
     UnlockTimeNotInFuture = 2,
-
-    /// No active deposit found for this address.
     NoDepositFound = 3,
-
-    /// The lock period has not yet expired.
     FundsStillLocked = 4,
-
-    /// A deposit already exists for this address.
-    /// Users must withdraw before creating a new deposit.
     DepositAlreadyExists = 5,
-
-    /// The requested lock duration exceeds the maximum allowed.
     LockDurationTooLong = 6,
-
-    /// Caller is not authorized to perform this action.
     Unauthorized = 7,
-
-    /// The deposit amount exceeds the maximum allowed per vault.
     AmountTooLarge = 8,
+    InvalidPenaltyBps = 9,
+    InvalidAdmin = 10,
+    LockDurationTooShort = 11,
+    ContractPaused = 12,
+    /// Returned by `cancel_deposit` when the vault is already past its unlock
+    /// time — the caller should use `withdraw` instead.
+    FundsAlreadyUnlocked = 13,
+    /// Returned by `batch_emergency_withdraw` when `depositors.len()` exceeds
+    /// `MAX_BATCH_SIZE`.
+    BatchTooLarge = 14,
 }
