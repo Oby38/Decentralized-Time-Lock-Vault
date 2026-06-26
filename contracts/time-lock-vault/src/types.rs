@@ -6,10 +6,16 @@ pub enum VaultKey {
     Deposit(Address, u32),
     DepositByLedger(Address, u32),
     DepositCounter(Address),
+    /// Tracks the set of active deposit IDs for a depositor (replaces the
+    /// O(counter) scan in the old implementation).
+    ActiveDepositIds(Address),
     Admin,
     PendingAdmin,
     Initialized,
     DepositorList,
+    /// Per-depositor membership flag — enables O(1) duplicate check in
+    /// `add_depositor` without scanning the full `DepositorList`.
+    DepositorMember(Address),
     FeeRecipient,
     MaxDeposit,
     MaxLockSecs,
@@ -64,4 +70,13 @@ pub struct LedgerVaultEntry {
     /// Applied only by `cancel_deposit`; `withdraw` after unlock incurs no penalty.
     /// Example: 500 = 5 % of `amount` sent to the fee recipient.
     pub penalty_bps: u32,
+}
+
+/// Result entry for `batch_emergency_withdraw`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawResult {
+    pub depositor: Address,
+    pub deposit_id: u32,
+    pub success: bool,
 }

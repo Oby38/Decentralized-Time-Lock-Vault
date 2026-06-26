@@ -26,6 +26,7 @@ pub use constants::{
 
 pub use contract::TimeLockVault;
 pub use contract::TimeLockVaultClient;
+pub use types::WithdrawResult;
 
 #[cfg(test)]
 mod test;
