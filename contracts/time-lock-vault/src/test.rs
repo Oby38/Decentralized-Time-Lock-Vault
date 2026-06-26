@@ -91,41 +91,6 @@ fn test_double_initialize_fails() {
     assert_eq!(result, Err(Ok(VaultError::Unauthorized)));
 }
 
-    let unlock_time_1 = env.ledger().timestamp() + 3600;
-    let unlock_time_2 = env.ledger().timestamp() + 7200;
-
-    let vault_id = env.register(TimeLockVault, ());
-    let vault = TimeLockVaultClient::new(&env, &vault_id);
-    let admin: Address = Address::generate(&env);
-    let fee: Address = Address::generate(&env);
-
-    assert!(!vault.is_initialized());
-    vault.initialize(&admin, &fee, &None, &None);
-    assert!(vault.is_initialized());
-
-    vault.withdraw(&alice, &first_id).unwrap();
-    assert_eq!(vault.get_deposit_ids(&alice), vec![1_u32]);
-}
-
-#[test]
-fn test_depositor_pagination_is_capped_to_a_reasonable_page_size() {
-    let (env, vault, token, _admin, alice, _fee) = setup();
-    let unlock_time = env.ledger().timestamp() + 3600;
-    let id = vault.deposit(&alice, &token, &1_000, &unlock_time, &0);
-
-    for i in 0..(MAX_DEPOSITORS_PAGE_SIZE + 5) {
-        let depositor = Address::generate(&env);
-        StellarAssetClient::new(&env, &token).mint(&depositor, &10_000);
-        let unlock_time = env.ledger().timestamp() + 3600 + i as u64;
-        vault.deposit(&depositor, &token, &100, &unlock_time, &0).unwrap();
-    }
-
-    let entry = vault.get_vault(&alice).expect("entry should exist");
-    assert_eq!(entry.amount, 1_000);
-    assert_eq!(entry.unlock_time, unlock_time);
-    assert_eq!(entry.token, token);
-}
-
 #[test]
 fn test_short_lock_durations_are_rejected() {
     let (env, vault, token, _admin, alice, _fee) = setup();
@@ -229,7 +194,7 @@ fn test_deposit_lock_duration_too_short_fails() {
 
 #[test]
 fn test_multiple_deposits_same_address() {
-    let (env, vault, token, _admin, alice, _fee) = setup();
+    let (env, vault, token, _admin, alice, fee_recipient) = setup();
     StellarAssetClient::new(&env, &token).mint(&alice, &5_000);
 
     let t1 = env.ledger().timestamp() + 3600;
@@ -244,8 +209,8 @@ fn test_multiple_deposits_same_address() {
     assert_eq!(id1, 1);
     assert_eq!(id2, 2);
 
-    vault.cancel_deposit(&alice, &deposit_id).unwrap();
-    assert!(vault.get_vault(&alice, &deposit_id).is_none());
+    vault.cancel_deposit(&alice, &id0).unwrap();
+    assert!(vault.get_vault(&alice, &id0).is_none());
     assert_eq!(vault.get_deposit_ids(&alice), Vec::<u32>::new(&env));
     assert_eq!(vault.get_fee_recipient(), Some(fee_recipient));
 }
@@ -1700,19 +1665,6 @@ fn test_has_any_deposit_with_multiple_deposits_one_remaining() {
 // ================================================================
 //  deposit_by_ledger — pause, duration bounds, query, lifecycle
 // ================================================================
-
-fn advance_ledger(env: &Env, ledgers: u32) {
-    env.ledger().set(LedgerInfo {
-        timestamp: env.ledger().timestamp(),
-        protocol_version: env.ledger().protocol_version(),
-        sequence_number: env.ledger().sequence() + ledgers,
-        network_id: Default::default(),
-        base_reserve: 10,
-        min_temp_entry_ttl: 16,
-        min_persistent_entry_ttl: 4096,
-        max_entry_ttl: 33_000_000,
-    });
-}
 
 /// Pause check: deposit_by_ledger must fail when contract is paused.
 #[test]

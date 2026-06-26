@@ -105,6 +105,7 @@ pub fn set_deposit(env: &Env, depositor: &Address, deposit_id: u32, entry: &Vaul
         .persistent()
         .extend_ttl(&key, BUMP_THRESHOLD, BUMP_TARGET);
     add_active_deposit_id(env, depositor, deposit_id);
+    inc_active_count(env, depositor);
 }
 
 /// Retrieve the vault entry for `depositor` — does NOT bump TTL.
@@ -130,6 +131,7 @@ pub fn remove_deposit(env: &Env, depositor: &Address, deposit_id: u32) {
     let key = VaultKey::Deposit(depositor.clone(), deposit_id);
     env.storage().persistent().remove(&key);
     remove_active_deposit_id(env, depositor, deposit_id);
+    dec_active_count(env, depositor);
 }
 
 // ----------------------------------------------------------------
@@ -143,6 +145,7 @@ pub fn set_deposit_by_ledger(env: &Env, depositor: &Address, deposit_id: u32, en
         .persistent()
         .extend_ttl(&key, BUMP_THRESHOLD, BUMP_TARGET);
     add_active_deposit_id(env, depositor, deposit_id);
+    inc_active_count(env, depositor);
 }
 
 pub fn get_deposit_by_ledger_readonly(env: &Env, depositor: &Address, deposit_id: u32) -> Option<LedgerVaultEntry> {
@@ -154,6 +157,7 @@ pub fn remove_deposit_by_ledger(env: &Env, depositor: &Address, deposit_id: u32)
     let key = VaultKey::DepositByLedger(depositor.clone(), deposit_id);
     env.storage().persistent().remove(&key);
     remove_active_deposit_id(env, depositor, deposit_id);
+    dec_active_count(env, depositor);
 }
 
 // ----------------------------------------------------------------
@@ -169,24 +173,15 @@ pub fn get_admin(env: &Env) -> Option<Address> {
     env.storage().persistent().get(&VaultKey::Admin)
 }
 
-pub fn require_admin(env: &Env, admin: &Address) -> Result<(), crate::errors::VaultError> {
-    let stored = get_admin(env).ok_or(crate::errors::VaultError::Unauthorized)?;
-    if *admin != stored {
-        return Err(crate::errors::VaultError::Unauthorized);
+pub fn require_admin(env: &Env, caller: &Address) -> Result<(), crate::errors::VaultError> {
+    match get_admin(env) {
+        Some(admin) if admin == *caller => Ok(()),
+        _ => Err(crate::errors::VaultError::Unauthorized),
     }
-    Ok(())
 }
 
 pub fn remove_admin(env: &Env) {
     env.storage().persistent().remove(&VaultKey::Admin);
-}
-
-/// Asserts that `caller` is the current admin; returns `Unauthorized` otherwise.
-pub fn require_admin(env: &Env, caller: &Address) -> Result<(), VaultError> {
-    match get_admin(env) {
-        Some(admin) if admin == *caller => Ok(()),
-        _ => Err(VaultError::Unauthorized),
-    }
 }
 
 pub fn set_pending_admin(env: &Env, pending: &Address) {
