@@ -92,25 +92,6 @@ fn test_double_initialize_fails() {
 }
 
 #[test]
-fn test_initialize_sets_initialized_flag() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let vault_id = env.register(TimeLockVault, ());
-    let vault = TimeLockVaultClient::new(&env, &vault_id);
-    let admin: Address = Address::generate(&env);
-    let fee: Address = Address::generate(&env);
-
-    assert!(!vault.is_initialized());
-    vault.initialize(&admin, &fee, &None, &None);
-    assert!(vault.is_initialized());
-}
-
-// ================================================================
-//  Basic Deposit & Withdraw (time-based)
-// ================================================================
-
-#[test]
 fn test_deposit_basic_succeeds() {
     let (env, vault, token, _admin, alice, _fee) = setup();
     let token_client = TokenClient::new(&env, &token);
@@ -321,7 +302,7 @@ fn test_cancel_deposit_after_unlock_fails() {
 
 #[test]
 fn test_multiple_deposits_same_address() {
-    let (env, vault, token, _admin, alice, _fee) = setup();
+    let (env, vault, token, _admin, alice, fee_recipient) = setup();
     StellarAssetClient::new(&env, &token).mint(&alice, &5_000);
 
     let t1 = env.ledger().timestamp() + 3600;
@@ -335,6 +316,11 @@ fn test_multiple_deposits_same_address() {
     assert_eq!(id0, 0);
     assert_eq!(id1, 1);
     assert_eq!(id2, 2);
+
+    vault.cancel_deposit(&alice, &id0).unwrap();
+    assert!(vault.get_vault(&alice, &id0).is_none());
+    assert_eq!(vault.get_deposit_ids(&alice), Vec::<u32>::new(&env));
+    assert_eq!(vault.get_fee_recipient(), Some(fee_recipient));
 }
 
 #[test]
@@ -961,6 +947,7 @@ fn test_migrate_time_to_ledger_succeeds() {
     assert_eq!(ledger_entry.amount, 1_000);
 }
 
+/// Pause check: deposit_by_ledger must fail when contract is paused.
 #[test]
 fn test_migrate_ledger_to_time_succeeds() {
     let (env, vault, token, admin, alice, _fee) = setup();

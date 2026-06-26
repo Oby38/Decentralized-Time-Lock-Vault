@@ -94,27 +94,3 @@ pub fn deposit_cancelled(
     );
     env.events().publish(topics, (amount, penalty));
 }
-
-pub fn migrated(
-    env: &Env,
-    depositor: &Address,
-    deposit_id: u32,
-    from_time: bool,
-    to_ledger: bool,
-) {
-    let topics = (
-        Symbol::new(env, "migrated"),
-        depositor.clone(),
-    );
-    env.events().publish(topics, (deposit_id, from_time, to_ledger));
-}
-
-pub fn frozen(env: &Env, admin: &Address, depositor: &Address) {
-    let topics = (Symbol::new(env, "frozen"), depositor.clone());
-    env.events().publish(topics, (admin.clone(),));
-}
-
-pub fn unfrozen(env: &Env, admin: &Address, depositor: &Address) {
-    let topics = (Symbol::new(env, "unfrozen"), depositor.clone());
-    env.events().publish(topics, (admin.clone(),));
-}

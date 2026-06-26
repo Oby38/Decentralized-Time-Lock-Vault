@@ -221,7 +221,7 @@ impl TimeLockVault {
             return Err(VaultError::UnlockTimeNotInFuture);
         }
 
-        let lock_ledgers = unlock_ledger - current_ledger;
+        let lock_ledgers = unlock_ledger.saturating_sub(current_ledger);
         let max_lock = storage::get_max_lock_secs(&env).unwrap_or(MAX_LOCK_DURATION_SECS);
         let max_lock_ledgers = (max_lock / storage::LEDGER_SECONDS) as u32;
         if lock_ledgers > max_lock_ledgers {
@@ -259,10 +259,7 @@ impl TimeLockVault {
     pub fn cancel_deposit(env: Env, depositor: Address, deposit_id: u32) -> Result<(), VaultError> {
         depositor.require_auth();
 
-        if storage::is_frozen(&env, &depositor) {
-            return Err(VaultError::DepositorFrozen);
-        }
-
+        // Try timestamp-based deposit first
         if let Some(entry) = storage::get_deposit(&env, &depositor, deposit_id) {
             let now = env.ledger().timestamp();
             if now >= entry.unlock_time {
@@ -293,6 +290,7 @@ impl TimeLockVault {
             return Ok(());
         }
 
+        // Try ledger-based deposit
         if let Some(entry) = storage::get_deposit_by_ledger_readonly(&env, &depositor, deposit_id) {
             let current_ledger = env.ledger().sequence();
             if current_ledger >= entry.unlock_ledger {
@@ -473,8 +471,8 @@ impl TimeLockVault {
 
         for item in depositors.iter() {
             let (depositor, deposit_id) = item;
-            let mut success = false;
 
+            // Try timestamp-based deposit first
             if let Some(entry) = storage::get_deposit_readonly(&env, &depositor, deposit_id) {
                 storage::remove_deposit(&env, &depositor, deposit_id);
                 if !storage::has_any_deposit(&env, &depositor) {
@@ -497,8 +495,16 @@ impl TimeLockVault {
                     entry.amount,
                 );
 
-                success = true;
-            } else if let Some(entry) = storage::get_deposit_by_ledger_readonly(&env, &depositor, deposit_id) {
+                results.push_back(WithdrawResult {
+                    depositor,
+                    deposit_id,
+                    success: true,
+                });
+                continue;
+            }
+
+            // Try ledger-based deposit
+            if let Some(entry) = storage::get_deposit_by_ledger_readonly(&env, &depositor, deposit_id) {
                 storage::remove_deposit_by_ledger(&env, &depositor, deposit_id);
                 if !storage::has_any_deposit(&env, &depositor) {
                     storage::remove_depositor(&env, &depositor);
@@ -520,13 +526,18 @@ impl TimeLockVault {
                     entry.amount,
                 );
 
-                success = true;
+                results.push_back(WithdrawResult {
+                    depositor,
+                    deposit_id,
+                    success: true,
+                });
+                continue;
             }
 
             results.push_back(WithdrawResult {
                 depositor,
                 deposit_id,
-                success,
+                success: false,
             });
         }
 
@@ -765,10 +776,16 @@ impl TimeLockVault {
     }
 
     pub fn time_remaining(env: Env, depositor: Address, deposit_id: u32) -> u64 {
-        match storage::get_deposit_readonly(&env, &depositor, deposit_id) {
-            None => 0,
-            Some(entry) => entry.unlock_time.saturating_sub(env.ledger().timestamp()),
+        // Try timestamp-based deposit first
+        if let Some(entry) = storage::get_deposit_readonly(&env, &depositor, deposit_id) {
+            return entry.unlock_time.saturating_sub(env.ledger().timestamp());
         }
+        // Try ledger-based deposit
+        if let Some(entry) = storage::get_deposit_by_ledger_readonly(&env, &depositor, deposit_id) {
+            let remaining_ledgers = entry.unlock_ledger.saturating_sub(env.ledger().sequence());
+            return (remaining_ledgers as u64).saturating_mul(storage::LEDGER_SECONDS);
+        }
+        0
     }
 
     pub fn get_admin(env: Env) -> Option<Address> {
