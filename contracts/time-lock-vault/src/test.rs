@@ -607,6 +607,29 @@ fn test_depositor_removed_on_withdraw() {
     assert_eq!(vault.get_depositor_count(), 0);
 }
 
+#[test]
+fn test_get_depositors_pagination() {
+    let (env, vault, token, _admin, alice, _fee) = setup();
+    let bob: Address = Address::generate(&env);
+    let carol: Address = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&alice, &5_000);
+    StellarAssetClient::new(&env, &token).mint(&bob, &5_000);
+
+    let t1 = env.ledger().timestamp() + 3600;
+    let t2 = env.ledger().timestamp() + 7200;
+    let t3 = env.ledger().timestamp() + 10800;
+
+    vault.deposit(&alice, &token, &1_000, &t1, &0);
+    vault.deposit(&bob, &token, &1_000, &t2, &0);
+    vault.deposit(&carol, &token, &1_000, &t3, &0);
+
+    let page1 = vault.get_depositors(&0, &2);
+    assert_eq!(page1.len(), 2);
+
+    let page2 = vault.get_depositors(&2, &2);
+    assert_eq!(page2.len(), 1);
+}
+
 // ================================================================
 //  Pause / Unpause
 // ================================================================

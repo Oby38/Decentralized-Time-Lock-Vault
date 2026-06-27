@@ -73,7 +73,7 @@ fn remove_active_deposit_id(env: &Env, depositor: &Address, deposit_id: u32) {
 }
 
 /// Returns true if `depositor` has at least one active deposit.
-/// Derives the answer from the ActiveDepositIds list length — no separate counter key.
+/// Uses the `ActiveDepositCount` counter maintained alongside deposit ids.
 pub fn has_any_deposit(env: &Env, depositor: &Address) -> bool {
     let active_key = VaultKey::ActiveDepositCount(depositor.clone());
     let active: u32 = env.storage().persistent().get(&active_key).unwrap_or(0);
@@ -107,6 +107,9 @@ pub fn set_deposit(env: &Env, depositor: &Address, deposit_id: u32, entry: &Vaul
     inc_active_count(env, depositor);
 }
 
+/// Retrieve the vault entry for `depositor` — does NOT bump TTL.
+/// Use this for all reads (writes/mutations as well as view functions)
+/// since mutations that follow will either remove the entry or replace it.
 pub fn get_deposit(env: &Env, depositor: &Address, deposit_id: u32) -> Option<VaultEntry> {
     let key = VaultKey::Deposit(depositor.clone(), deposit_id);
     let entry: Option<VaultEntry> = env.storage().persistent().get(&key);
@@ -248,19 +251,6 @@ pub fn get_fee_recipient(env: &Env) -> Option<Address> {
 //  Depositor index helpers
 // ----------------------------------------------------------------
 
-fn get_depositor_list_raw(env: &Env) -> Vec<Address> {
-    env.storage()
-        .persistent()
-        .get(&VaultKey::DepositorList)
-        .unwrap_or_else(|| Vec::new(env))
-}
-
-fn save_depositor_list_raw(env: &Env, list: &Vec<Address>) {
-    env.storage().persistent().set(&VaultKey::DepositorList, list);
-    env.storage()
-        .persistent()
-        .extend_ttl(&VaultKey::DepositorList, BUMP_THRESHOLD, BUMP_TARGET);
-}
 
 fn get_depositor_count_raw(env: &Env) -> u32 {
     env.storage()
@@ -315,13 +305,6 @@ fn remove_depositor_slot(env: &Env, addr: &Address) {
         .remove(&VaultKey::DepositorIndex(addr.clone()));
 }
 
-pub fn get_depositor_list(env: &Env) -> Vec<Address> {
-    get_depositor_list_raw(env)
-}
-
-pub fn save_depositor_list(env: &Env, list: &Vec<Address>) {
-    save_depositor_list_raw(env, list);
-}
 
 pub fn add_depositor(env: &Env, depositor: &Address) {
     let member_key = VaultKey::DepositorMember(depositor.clone());
@@ -338,9 +321,6 @@ pub fn add_depositor(env: &Env, depositor: &Address) {
     set_depositor_slot(env, depositor, count);
     set_depositor_count(env, count + 1);
 
-    let mut list = get_depositor_list_raw(env);
-    list.push_back(depositor.clone());
-    save_depositor_list_raw(env, &list);
 }
 
 pub fn remove_depositor(env: &Env, depositor: &Address) {

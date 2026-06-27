@@ -11,7 +11,6 @@ pub enum VaultKey {
     Admin,
     PendingAdmin,
     Initialized,
-    DepositorList,
     DepositorMember(Address),
     DepositorCount,
     DepositorAt(u32),

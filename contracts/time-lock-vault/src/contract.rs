@@ -98,7 +98,6 @@ impl TimeLockVault {
         if lock_duration > max_lock {
             return Err(VaultError::LockDurationTooLong);
         }
-
         if lock_duration < MIN_LOCK_DURATION_SECS {
             return Err(VaultError::LockDurationTooShort);
         }
@@ -449,6 +448,7 @@ impl TimeLockVault {
             return Ok(());
         }
 
+        // --- Load ledger-based deposit if no timestamp-based deposit exists ---
         if let Some(entry) = storage::get_deposit_by_ledger_readonly(&env, &depositor, deposit_id) {
             storage::remove_deposit_by_ledger(&env, &depositor, deposit_id);
             if !storage::has_any_deposit(&env, &depositor) {
