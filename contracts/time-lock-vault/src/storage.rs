@@ -1,13 +1,7 @@
 use soroban_sdk::{Address, Env, Vec};
 
-use crate::types::{VaultEntry, VaultKey, LedgerVaultEntry, MAX_LOCK_DURATION_SECS};
-
-// Number of seconds per ledger — Soroban ledgers are ~5 seconds apart.
-pub const LEDGER_SECONDS: u64 = 5;
-
-// How many ledgers to extend TTL to cover the maximum allowed lock duration.
-pub const BUMP_THRESHOLD: u32 = 518_400;
-pub const BUMP_TARGET: u32 = ((MAX_LOCK_DURATION_SECS + LEDGER_SECONDS - 1) / LEDGER_SECONDS) as u32;
+use crate::constants::{BUMP_TARGET, BUMP_THRESHOLD};
+use crate::types::{VaultEntry, VaultKey, LedgerVaultEntry};
 
 // ----------------------------------------------------------------
 //  Deposit counter helpers
@@ -108,6 +102,13 @@ pub fn get_admin(env: &Env) -> Option<Address> {
 
 pub fn remove_admin(env: &Env) {
     env.storage().persistent().remove(&VaultKey::Admin);
+}
+
+pub fn require_admin(env: &Env, caller: &Address) -> Result<(), crate::errors::VaultError> {
+    match get_admin(env) {
+        Some(admin) if admin == *caller => Ok(()),
+        _ => Err(crate::errors::VaultError::Unauthorized),
+    }
 }
 
 pub fn set_pending_admin(env: &Env, pending: &Address) {

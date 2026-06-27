@@ -503,16 +503,18 @@ impl TimeLockVault {
         storage::get_deposit_readonly(&env, &depositor, deposit_id)
     }
 
-    pub fn get_vault_batch(env: Env, depositors: Vec<Address>, deposit_id: u32) -> Vec<Option<VaultEntry>> {
-        let limit = if depositors.len() > MAX_BATCH_SIZE { MAX_BATCH_SIZE } else { depositors.len() as u32 };
+    pub fn get_vault_batch(env: Env, depositors: Vec<Address>, deposit_id: u32) -> Result<Vec<Option<VaultEntry>>, VaultError> {
+        if depositors.len() > MAX_BATCH_SIZE {
+            return Err(VaultError::BatchTooLarge);
+        }
         let mut results = Vec::new(&env);
-        for i in 0..limit {
+        for i in 0..depositors.len() {
             if let Some(depositor) = depositors.get(i) {
                 let entry = storage::get_deposit_readonly(&env, &depositor, deposit_id);
                 results.push_back(entry);
             }
         }
-        results
+        Ok(results)
     }
 
     pub fn get_deposit_ids(env: Env, depositor: Address) -> Vec<u32> {

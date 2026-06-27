@@ -16,4 +16,5 @@ pub enum VaultError {
     InvalidAdmin = 10,
     LockDurationTooShort = 11,
     ContractPaused = 12,
+    BatchTooLarge = 13,
 }
