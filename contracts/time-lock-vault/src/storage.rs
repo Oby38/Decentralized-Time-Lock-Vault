@@ -273,6 +273,22 @@ fn get_depositor_at(env: &Env, slot: u32) -> Address {
         .unwrap()
 }
 
+// ----------------------------------------------------------------
+//  Pause state helpers
+// ----------------------------------------------------------------
+
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().persistent().set(&VaultKey::Paused, &paused);
+    env.storage()
+        .persistent()
+        .extend_ttl(&VaultKey::Paused, BUMP_THRESHOLD, BUMP_TARGET);
+}
+
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .persistent()
+        .get::<VaultKey, bool>(&VaultKey::Paused)
+        .unwrap_or(false)
 fn set_depositor_at(env: &Env, slot: u32, addr: &Address) {
     env.storage()
         .persistent()

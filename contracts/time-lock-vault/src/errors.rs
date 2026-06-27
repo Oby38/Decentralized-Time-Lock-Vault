@@ -13,6 +13,12 @@ pub enum VaultError {
     Unauthorized = 7,
     AmountTooLarge = 8,
     InvalidPenaltyBps = 9,
+    
+    /// The requested lock duration is shorter than the minimum allowed.
+    LockDurationTooShort = 10,
+
+    /// The nominated admin address is invalid (e.g., same as current admin).
+    InvalidAdmin = 11,
     InvalidAdmin = 10,
     LockDurationTooShort = 11,
     ContractPaused = 12,

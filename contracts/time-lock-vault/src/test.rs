@@ -15,6 +15,12 @@ use crate::{
     types::VaultEntry,
 };
 
+// ================================================================
+//  Test helpers
+// ================================================================
+
+/// Returns (env, vault_client, token_address, admin, alice, fee_recipient).
+fn setup() -> (Env, TimeLockVaultClient<'static>, Address, Address, Address, Address) {
 fn setup() -> (
     Env,
     TimeLockVaultClient<'static>,
@@ -37,6 +43,7 @@ fn setup() -> (
 
     StellarAssetClient::new(&env, &token_address).mint(&alice, &10_000);
 
+    vault.initialize(&admin, &fee_recipient);
     vault.initialize(&admin, &fee_recipient, &None, &None);
 
     (env, vault, token_address, admin, alice, fee_recipient)
