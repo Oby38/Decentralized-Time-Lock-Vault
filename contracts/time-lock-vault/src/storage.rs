@@ -183,6 +183,13 @@ pub fn remove_admin(env: &Env) {
     env.storage().persistent().remove(&VaultKey::Admin);
 }
 
+pub fn require_admin(env: &Env, caller: &Address) -> Result<(), crate::errors::VaultError> {
+    match get_admin(env) {
+        Some(admin) if admin == *caller => Ok(()),
+        _ => Err(crate::errors::VaultError::Unauthorized),
+    }
+}
+
 pub fn set_pending_admin(env: &Env, pending: &Address) {
     env.storage().persistent().set(&VaultKey::PendingAdmin, pending);
     extend_ttl(env, &VaultKey::PendingAdmin);

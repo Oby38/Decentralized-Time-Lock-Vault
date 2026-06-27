@@ -27,6 +27,11 @@ pub fn withdraw_to(
     env.events().publish(topics, (deposit_id, amount));
 }
 
+pub fn withdraw_to(env: &Env, depositor: &Address, recipient: &Address, token: &Address, amount: i128) {
+    let topics = (Symbol::new(env, "withdraw_to"), depositor.clone(), token.clone());
+    env.events().publish(topics, (recipient.clone(), amount));
+}
+
 pub fn emergency_withdraw(
     env: &Env,
     admin: &Address,
@@ -72,6 +77,16 @@ pub fn admin_transfer_accepted(env: &Env, new_admin: &Address) {
 
 pub fn admin_renounced(env: &Env, former_admin: &Address) {
     let topics = (Symbol::new(env, "adm_renounce"), former_admin.clone());
+    env.events().publish(topics, ());
+}
+
+pub fn paused(env: &Env, admin: &Address) {
+    let topics = (Symbol::new(env, "paused"), admin.clone());
+    env.events().publish(topics, ());
+}
+
+pub fn unpaused(env: &Env, admin: &Address) {
+    let topics = (Symbol::new(env, "unpaused"), admin.clone());
     env.events().publish(topics, ());
 }
 

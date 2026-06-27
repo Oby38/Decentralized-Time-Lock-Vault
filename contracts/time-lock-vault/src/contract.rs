@@ -1,7 +1,7 @@
 use soroban_sdk::{contract, contractimpl, token, Address, Env, Vec};
 
 use crate::{
-    constants::{MAX_BATCH_SIZE, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS, MIN_LOCK_DURATION_SECS},
+    constants::{MAX_BATCH_SIZE, MAX_DEPOSIT_AMOUNT, MAX_LOCK_DURATION_SECS, MIN_LOCK_DURATION_SECS, LEDGER_SECONDS},
     errors::VaultError,
     events, storage,
     types::{LedgerVaultEntry, VaultEntry, WithdrawResult},
@@ -998,12 +998,12 @@ impl TimeLockVault {
     pub fn get_vault_batch(env: Env, depositors: Vec<Address>, deposit_id: u32) -> Vec<Option<VaultEntry>> {
         let limit = if depositors.len() > MAX_BATCH_SIZE { MAX_BATCH_SIZE } else { depositors.len() };
         let mut results = Vec::new(&env);
-        for i in 0..limit {
+        for i in 0..depositors.len() {
             if let Some(depositor) = depositors.get(i) {
                 results.push_back(storage::get_deposit_readonly(&env, &depositor, deposit_id));
             }
         }
-        results
+        Ok(results)
     }
 
     pub fn get_deposit_ids(env: Env, depositor: Address) -> Vec<u32> {
