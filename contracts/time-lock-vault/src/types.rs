@@ -1,25 +1,40 @@
 use soroban_sdk::{contracttype, Address};
 
-pub const MAX_DEPOSIT_AMOUNT: i128 = 1_000_000_000_000_000;
-pub const MAX_LOCK_DURATION_SECS: u64 = 157_788_000;
-pub const MIN_LOCK_DURATION_SECS: u64 = 60;
-pub const MAX_BATCH_SIZE: u32 = 20;
-
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum VaultKey {
     Deposit(Address, u32),
     DepositByLedger(Address, u32),
     DepositCounter(Address),
+    ActiveDepositIds(Address),
+    ActiveDepositCount(Address),
     Admin,
+    /// Pending admin during a two-step transfer
     PendingAdmin,
     Initialized,
-    DepositorList,
+    DepositorMember(Address),
+    DepositorCount,
+    DepositorAt(u32),
+    DepositorIndex(Address),
     FeeRecipient,
     MaxDeposit,
     MaxLockSecs,
-    /// Boolean flag: when true, deposits are paused (admin-controlled)
+    /// Flag indicating whether deposits are paused
     Paused,
+}
+
+// ----------------------------------------------------------------
+//  Data Structures
+// ----------------------------------------------------------------
+
+/// Represents a single vault deposit.
+/// The depositor address is not stored here — it is already the storage key
+/// (VaultKey::Deposit(Address, u32)), so duplicating it wastes persistent storage.
+    Paused,
+    DepositorFrozen(Address),
+    TokenFrozen(Address),
+    MaxPenaltyBps,
+    MinCancelFee,
 }
 
 #[contracttype]
@@ -42,16 +57,10 @@ pub struct LedgerVaultEntry {
     pub penalty_bps: u32,
 }
 
-/// Summary of the contract's current operational state, returned by `vault_status`.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VaultStatus {
-    /// `true` if an admin exists and has not been renounced.
-    pub has_admin: bool,
-    /// The current admin address, or `None` if renounced.
-    pub admin: Option<Address>,
-    /// `true` if new deposits are currently paused.
-    pub paused: bool,
-    /// Total number of active depositors.
-    pub depositor_count: u32,
+pub struct WithdrawResult {
+    pub depositor: Address,
+    pub deposit_id: u32,
+    pub success: bool,
 }

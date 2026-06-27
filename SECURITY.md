@@ -30,6 +30,14 @@ The following are considered in-scope vulnerabilities:
 - Re-entrancy or checks-effects-interactions violations
 - Admin privilege escalation
 
+## Contract-specific guidance
+
+- `initialize()` has no built-in deploy-time guard. Always initialize in the same transaction as deployment to prevent an attacker from seizing admin rights before the contract is initialized.
+- `pause()` blocks `deposit` and `deposit_for`, but does not currently block `deposit_by_ledger`. Do not rely on pause as a complete halt for all deposit entry points.
+- `emergency_withdraw()` only supports timestamp-based deposits. Ledger-based deposits cannot be recovered via the current emergency withdraw path.
+- `get_vault()`, `get_deposit_ids()`, `time_remaining()`, and `withdraw_to()` operate only on timestamp-based deposits; they do not expose ledger-based deposits.
+- The contract is immutable after deployment. Fixes require redeploying to a new contract and migrating funds.
+
 ## Out of Scope
 
 - Stellar network-level issues (report to [Stellar](https://www.stellar.org/bug-bounty-program))
@@ -40,3 +48,56 @@ The following are considered in-scope vulnerabilities:
 ## Disclosure Policy
 
 We follow coordinated disclosure. Please allow us reasonable time to patch before any public disclosure.
+
+### Disclosure Timeline
+
+| Step | Timeframe |
+|------|-----------|
+| Acknowledgement of your report | Within 72 hours of receipt |
+| Initial triage and severity assessment | Within 5 business days |
+| Status update to reporter | Every 7 days until resolved |
+| Patch release for Critical/High issues | Within 14 days of confirmation |
+| Patch release for Medium/Low issues | Within 60 days of confirmation |
+| Public disclosure (coordinated with reporter) | After patch is available, or after 90 days maximum |
+
+If a fix requires redeployment of the contract (because Soroban contracts are immutable), the disclosure timeline begins from when a migration path is communicated to users.
+
+## Severity Guidelines
+
+We use a four-level severity scale aligned with CVSS v3.
+
+### Critical
+
+Direct, exploitable fund loss or theft with no prerequisites.
+
+Examples:
+- Logic bug allowing an attacker to withdraw another depositor's funds
+- Auth bypass on `emergency_withdraw` sending funds to a non-depositor address
+- Re-entrancy enabling double-withdrawal of the same deposit
+
+### High
+
+Significant fund loss or lock-up that requires specific conditions or limited attacker control.
+
+Examples:
+- Depositor funds permanently locked due to a storage corruption bug
+- Admin privilege escalation enabling unauthorized `emergency_withdraw` calls
+- Incorrect penalty calculation causing material fund loss on `cancel_deposit`
+
+### Medium
+
+Contract misbehaviour that does not directly cause fund loss but degrades correctness or availability.
+
+Examples:
+- Incorrect event data emitted (wrong amount or deposit_id)
+- TTL bump logic failing to extend storage, risking entry expiry before unlock time
+- Edge-case overflow in `time_remaining` returning an incorrect value
+
+### Low / Informational
+
+Minor issues or improvements with negligible security impact.
+
+Examples:
+- Missing input validation that is harmless in practice
+- Documentation inaccuracies about contract behaviour
+- Gas/instruction inefficiencies with no exploitable consequence

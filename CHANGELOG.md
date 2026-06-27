@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Documentation clarified current contract behavior for timestamp-based vs ledger-based deposits, pause semantics, and admin recovery.
+
 ## [0.1.0] - 2026-05-31
 
 ### Added
@@ -17,8 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `initialize(admin, fee_recipient, max_deposit, max_lock_secs)`  sets the admin and fee recipient addresses; optionally overrides compile-time limits for `MAX_DEPOSIT_AMOUNT` and `MAX_LOCK_DURATION_SECS`; can only be called once
 
 **Core**
-- `deposit(depositor, token, amount, unlock_time, penalty_bps)`  locks tokens until `unlock_time`; returns a per-depositor `deposit_id`
-- `deposit_for(payer, depositor, token, amount, unlock_time, penalty_bps)`  same as `deposit` but a third-party `payer` funds the vault on behalf of `depositor`
+- `deposit(depositor, token, amount, unlock_time, penalty_bps)`  locks tokens until `unlock_time` (Unix seconds derived from the ledger clock via `env.ledger().timestamp()`); returns a per-depositor `deposit_id`
+- `deposit_for(payer, depositor, token, amount, unlock_time, penalty_bps)`  same as `deposit` but a third-party `payer` funds the vault on behalf of `depositor`; the `payer` must sign the transaction and the depositor's address is stored as the beneficiary
 - `withdraw(depositor, deposit_id)`  returns the full locked amount to the depositor once `unlock_time` has passed
 - `cancel_deposit(depositor, deposit_id)`  early exit before unlock; applies `penalty_bps` penalty sent to `fee_recipient`, remainder returned to depositor
 
@@ -41,6 +44,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_depositor_count() -> u32`  total number of addresses with an active deposit
 - `get_depositors(offset, limit) -> Vec<Address>`  paginated list of active depositor addresses
 - `is_initialized() -> bool`  whether `initialize` has been called
+
+#### Ledger-Based Deposit Timing
+
+Unlock times are validated and enforced using the **Soroban ledger clock** (`env.ledger().timestamp()`), not wall-clock time. Key implications:
+
+- `unlock_time` must be supplied as a Unix timestamp (seconds since the Unix epoch).
+- The contract reads `env.ledger().timestamp()` once per invocation and caches the value locally to avoid repeated host-function calls.
+- A deposit is accepted only when `unlock_time > now` (strictly future).
+- A `withdraw` succeeds only when `env.ledger().timestamp() >= unlock_time`.
+- Ledger close times on Stellar advance roughly every 5–6 seconds. For short lock durations, callers should account for this granularity when choosing `unlock_time`.
+
+Example — depositing with a 1-hour lock:
+```
+let now: u64 = env.ledger().timestamp(); // e.g. 1_700_000_000
+let one_hour = 3_600_u64;
+contract.deposit(&depositor, &token, &amount, &(now + one_hour), &0_u32);
+```
+
+The `deposit_for` function follows the same ledger-time semantics:
+```
+// payer funds the vault; depositor is the beneficiary
+contract.deposit_for(&payer, &depositor, &token, &amount, &(now + one_hour), &0_u32);
+```
 
 #### Protocol Constants
 
@@ -91,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Storage
 
 - All entries use Persistent Storage with TTL bump threshold ~30 days (`518_400` ledgers) and target ~5.2 years (`33_000_000` ledgers)
-- Storage keys: `Admin`, `PendingAdmin`, `Initialized`, `FeeRecipient`, `MaxDeposit`, `MaxLockSecs`, `DepositCounter(depositor)`, `Deposit(depositor, id)`, `DepositorList`
+- Storage keys: `Admin`, `PendingAdmin`, `Initialized`, `FeeRecipient`, `MaxDeposit`, `MaxLockSecs`, `DepositCounter(depositor)`, `Deposit(depositor, id)`, `ActiveDepositIds(depositor)`, `ActiveDepositCount(depositor)`, `DepositorAt(slot)`, `DepositorIndex(depositor)`
 
 #### Infrastructure
 
